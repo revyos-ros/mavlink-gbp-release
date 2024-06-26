@@ -1,32 +1,16 @@
 #!/usr/bin/env python
 
-'''parse a MAVLink protocol XML file and generate a python implementation
+'''
+parse a MAVLink protocol XML file and generate a python implementation
 
 Copyright Andrew Tridgell 2011
 Released under GNU GPL version 3 or later
 
-General process:
- - each filename passed in:
-    - may be validated, based on --validate
-    - is parsed using mavparse.MAVXML into an xml document and appended to a list, "xml"
-
- - expand_includes is called to do a breadth-first search of the xml
-    documents structure inferred by the <include> tags in each
-    document, expanding the xml list from its base (just the ones on
-    the commandline) to the entire structure
-
- - update_includes works on the xml list created by expand_includes
-    - any xml document with no includes is added to the "done" list (there must be at least one of these)
-    - it repeatedly calls update_one_iteration
-    - each iteration is intended to include the crcs and other information from includes into the xml document doing the include
-
 '''
 
 from __future__ import print_function
-import sys
-if sys.version_info <= (3,10):
-    from future import standard_library
-    standard_library.install_aliases()
+from future import standard_library
+standard_library.install_aliases()
 from builtins import object
 import os
 import re
@@ -46,8 +30,7 @@ DEFAULT_STRICT_UNITS = False
 MAXIMUM_INCLUDE_FILE_NESTING = 5
 
 # List the supported languages. This is done globally because it's used by the GUI wrapper too
-# Right now, 'JavaScript' ~= 'JavaScript_Stable', in the future it may be made equivalent to 'JavaScript_NextGen'
-supportedLanguages = ["Ada", "C", "CS", "JavaScript", "JavaScript_Stable","JavaScript_NextGen", "TypeScript", "Python2", "Python3", "Python", "Lua", "WLua", "ObjC", "Swift", "Java", "C++11"]
+supportedLanguages = ["C", "CS", "JavaScript", "Python", "WLua", "ObjC", "Swift", "Java", "C++11"]
 
 
 def mavgen(opts, args):
@@ -77,125 +60,42 @@ def mavgen(opts, args):
             print("WARNING: XML Syntax Errors detected in %s XML schema file. XML validation will not be performed" % schemaFile, file=sys.stderr)
             print(str(err.error_log), file=sys.stderr)
             opts.validate = False
-        except Exception as e:
-            print("Exception:", e)
+        except:
             print("WARNING: Unable to load XML validator libraries. XML validation will not be performed", file=sys.stderr)
             opts.validate = False
 
     def expand_includes():
-        """Expand includes. Root files already parsed objects in the xml list."""
+        """Expand includes in current list of all files, ignoring those already parsed."""
+        for x in xml[:]:
+            for i in x.include:
+                fname = os.path.join(os.path.dirname(x.filename), i)
 
-        def expand_oneiteration():
-            '''takes the list of xml files to process and finds includes which
-            have not already been turned into xml documents added to
-            xml files to process, turns them into xml documents and
-            adds them to the xml files list.  Returns false if no more
-            documents were added.
-            '''
-            includeadded = False
-            for x in xml[:]:
-                for i in x.include:
-                    fname = os.path.abspath(os.path.join(os.path.dirname(x.filename), i))
-                    # Only parse new include files
-                    if fname in all_files:
-                        continue
-                    # Validate XML file with XSD file if possible.
-                    if opts.validate:
-                        print("Validating %s" % fname)
-                        if not mavgen_validate(fname):
-                            print("ERROR Validation of %s failed" % fname)
-                            exit(1)
-                    else:
-                        print("Validation skipped for %s." % fname)
-                    # Parsing
-                    print("Parsing %s" % fname)
-                    xml.append(mavparse.MAVXML(fname, opts.wire_protocol))
-                    all_files.add(fname)
-                    includeadded = True
-            return includeadded
-
-        for i in range(MAXIMUM_INCLUDE_FILE_NESTING):
-            if not expand_oneiteration():
-                break
-
-        if mavparse.check_duplicates(xml):
-            return False
-        if opts.validate and mavparse.check_missing_enum(xml):
-            return False
-        return True
-
-    def update_includes():
-        """Update dialects with crcs etc of included files.  Included files
-        were already found and parsed into xml list in
-        expand_includes().
-        """
-
-        # 1: Mark files that don't have includes as "done"
-        done = []
-        for x in xml:
-            #print("\n",x)
-            if len(x.include) == 0:
-                done.append(x)
-                #print("\nFile with no includes found (ENDPOINT): %s" % x.filename )
-        if len(done) == 0:
-            print("\nERROR in includes tree, no base found!")
-            exit(1)
-
-        #print("\n",done)
-
-        # 2: Update all 'not done' files for which all includes have
-        # been done.  Returns True if any updates were made
-        def update_oneiteration():
-            initial_done_length = len(done)
-            for x in xml:
-                #print("\nCHECK %s" % x.filename)
-                if x in done:
-                    #print("  already done, skip")
+                # Only parse new include files
+                if fname in all_files:
                     continue
-                #check if all its includes were already done
-                all_includes_done = True
-                for i in x.include:
-                    fname = os.path.abspath(os.path.join(os.path.dirname(x.filename), i))
-                    if fname not in [d.filename for d in done]:
-                        all_includes_done = False
-                        break
-                if not all_includes_done:
-                    #print("  not all includes ready, skip")
-                    continue
-                #Found file where all includes are done
-                done.append(x)
-                #print("  all includes ready, add" )
-                #now update it with the facts from all it's includes
-                for i in x.include:
-                    fname = os.path.abspath(os.path.join(os.path.dirname(x.filename), i))
-                    #print("  include file %s" % i )
-                    #Find the corresponding x
-                    for ix in xml:
-                        if ix.filename != fname:
-                            continue
-                        #print("    add %s" % ix.filename )
-                        x.message_crcs.update(ix.message_crcs)
-                        x.message_lengths.update(ix.message_lengths)
-                        x.message_min_lengths.update(ix.message_min_lengths)
-                        x.message_flags.update(ix.message_flags)
-                        x.message_target_system_ofs.update(ix.message_target_system_ofs)
-                        x.message_target_component_ofs.update(ix.message_target_component_ofs)
-                        x.message_names.update(ix.message_names)
-                        x.largest_payload = max(x.largest_payload, ix.largest_payload)
-                        break
+                all_files.add(fname)
 
-            if len(done) == len(xml):
-                return False  # finished
-            if len(done) == initial_done_length:
-                # we've made no progress
-                print("ERROR include tree can't be resolved, no base found!")
-                exit(1)
-            return True
+                # Validate XML file with XSD file if possible.
+                if opts.validate:
+                    print("Validating %s" % fname)
+                    if not mavgen_validate(fname):
+                        return False
+                else:
+                    print("Validation skipped for %s." % fname)
 
-        for i in range(MAXIMUM_INCLUDE_FILE_NESTING):
-            #print("\nITERATION "+str(i))
-            if not update_oneiteration():
-                break
+                # Parsing
+                print("Parsing %s" % fname)
+                xml.append(mavparse.MAVXML(fname, opts.wire_protocol))
+
+                # include message lengths and CRCs too
+                x.message_crcs.update(xml[-1].message_crcs)
+                x.message_lengths.update(xml[-1].message_lengths)
+                x.message_min_lengths.update(xml[-1].message_min_lengths)
+                x.message_flags.update(xml[-1].message_flags)
+                x.message_target_system_ofs.update(xml[-1].message_target_system_ofs)
+                x.message_target_component_ofs.update(xml[-1].message_target_component_ofs)
+                x.message_names.update(xml[-1].message_names)
+                x.largest_payload = max(x.largest_payload, xml[-1].largest_payload)
 
     def mavgen_validate(xmlfile):
         """Uses lxml to validate an XML file. We define mavgen_validate
@@ -242,9 +142,20 @@ def mavgen(opts, args):
         xml.append(mavparse.MAVXML(fname, opts.wire_protocol))
 
     # expand includes
-    if not expand_includes():
-        return False
-    update_includes()
+    for i in range(MAXIMUM_INCLUDE_FILE_NESTING):
+        len_allfiles = len(all_files)
+        expand_includes()
+        if len(all_files) == len_allfiles:
+            # stop when loop doesn't add any more included files
+            break
+
+    # work out max payload size across all includes
+    largest_payload = max(x.largest_payload for x in xml) if xml else 0
+    for x in xml:
+        x.largest_payload = largest_payload
+
+    if mavparse.check_duplicates(xml):
+        sys.exit(1)
 
     print("Found %u MAVLink message types in %u XML files" % (
         mavparse.total_msgs(xml), len(xml)))
@@ -252,39 +163,20 @@ def mavgen(opts, args):
     # convert language option to lowercase and validate
     opts.language = opts.language.lower()
     if opts.language == 'python':
-        # We support generating type annotations starting with
-        # python3.6. Type annotations were introduced in 3.5, but
-        # useful things like variable annotations are only supported
-        # starting with 3.6.
         from . import mavgen_python
-        mavgen_python.generate(opts.output, xml, enable_type_annotations=sys.version_info >= (3, 6))
-    elif opts.language == 'python2':
-        from . import mavgen_python
-        mavgen_python.generate(opts.output, xml, enable_type_annotations=False)
-    elif opts.language == 'python3':
-        from . import mavgen_python
-        mavgen_python.generate(opts.output, xml, enable_type_annotations=True)
+        mavgen_python.generate(opts.output, xml)
     elif opts.language == 'c':
         from . import mavgen_c
         mavgen_c.generate(opts.output, xml)
-    elif opts.language == 'lua':
-        from . import mavgen_lua
-        mavgen_lua.generate(opts.output, xml)
     elif opts.language == 'wlua':
         from . import mavgen_wlua
         mavgen_wlua.generate(opts.output, xml)
     elif opts.language == 'cs':
         from . import mavgen_cs
         mavgen_cs.generate(opts.output, xml)
-    elif (opts.language == 'javascript' ) or ( opts.language == 'javascript_stable' ):
-        from . import mavgen_javascript_stable as mavgen_javascript
-        mavgen_javascript.generate(opts.output, xml)
-    elif opts.language == 'javascript_nextgen':
+    elif opts.language == 'javascript':
         from . import mavgen_javascript
         mavgen_javascript.generate(opts.output, xml)
-    elif opts.language == 'typescript':
-        from . import mavgen_typescript
-        mavgen_typescript.generate(opts.output, xml)
     elif opts.language == 'objc':
         from . import mavgen_objc
         mavgen_objc.generate(opts.output, xml)
@@ -297,12 +189,6 @@ def mavgen(opts, args):
     elif opts.language == 'c++11':
         from . import mavgen_cpp11
         mavgen_cpp11.generate(opts.output, xml)
-    elif opts.language == 'ada':
-        if opts.wire_protocol != mavparse.PROTOCOL_1_0:
-            raise DeprecationWarning("Error! Mavgen_Ada only supports protocol version 1.0")
-        else:
-            from . import mavgen_ada
-            mavgen_ada.generate(opts.output, xml)
     else:
         print("Unsupported language %s" % opts.language)
 
@@ -320,31 +206,26 @@ class Opts(object):
         self.strict_units = strict_units
 
 
-def mavgen_python_dialect(dialect, wire_protocol, with_type_annotations):
+def mavgen_python_dialect(dialect, wire_protocol):
     '''generate the python code on the fly for a MAVLink dialect'''
     dialects = os.path.join(os.path.dirname(os.path.realpath(__file__)), '..', 'dialects')
-    mdef = os.getenv("MDEF", default=os.path.join(os.path.dirname(os.path.realpath(__file__)), '..', '..', 'message_definitions'))
-    legacy_path = "python2" if not with_type_annotations else ""
+    mdef = os.path.join(os.path.dirname(os.path.realpath(__file__)), '..', '..', 'message_definitions')
     if wire_protocol == mavparse.PROTOCOL_0_9:
-        py = os.path.join(dialects, 'v09', legacy_path, dialect + '.py')
+        py = os.path.join(dialects, 'v09', dialect + '.py')
         xml = os.path.join(dialects, 'v09', dialect + '.xml')
         if not os.path.exists(xml):
             xml = os.path.join(mdef, 'v0.9', dialect + '.xml')
     elif wire_protocol == mavparse.PROTOCOL_1_0:
-        py = os.path.join(dialects, 'v10', legacy_path, dialect + '.py')
+        py = os.path.join(dialects, 'v10', dialect + '.py')
         xml = os.path.join(dialects, 'v10', dialect + '.xml')
         if not os.path.exists(xml):
             xml = os.path.join(mdef, 'v1.0', dialect + '.xml')
     else:
-        py = os.path.join(dialects, 'v20', legacy_path, dialect + '.py')
+        py = os.path.join(dialects, 'v20', dialect + '.py')
         xml = os.path.join(dialects, 'v20', dialect + '.xml')
         if not os.path.exists(xml):
             xml = os.path.join(mdef, 'v1.0', dialect + '.xml')
-
-    if with_type_annotations:
-        opts = Opts(py, wire_protocol, language="Python3")
-    else:
-        opts = Opts(py, wire_protocol, language='Python2')
+    opts = Opts(py, wire_protocol)
 
     # Python 2 to 3 compatibility
     try:
@@ -358,8 +239,6 @@ def mavgen_python_dialect(dialect, wire_protocol, with_type_annotations):
     try:
         xml = os.path.relpath(xml)
         if not mavgen(opts, [xml]):
-            sys.stdout.seek(0)
-            stdout_saved.write(sys.stdout.getvalue())
             sys.stdout = stdout_saved
             return False
     except Exception:
