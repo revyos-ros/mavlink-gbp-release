@@ -20,11 +20,6 @@ try:
 except:
     print("WARNING: Numpy missing, mathematical notation will not be supported.")
 
-if sys.version_info[0] >= 3:
-    text_types = frozenset([str,])
-else:
-    text_types = frozenset([unicode, str])
-
 # cope with rename of raw_input in python3
 try:
     input = raw_input
@@ -32,7 +27,7 @@ except NameError:
     pass
 
 colourmap = {
-    'ardupilot' : {
+    'apm' : {
         'MANUAL'    : (1.0,   0,   0),
         'AUTO'      : (  0, 1.0,   0),
         'LOITER'    : (  0,   0, 1.0),
@@ -57,7 +52,6 @@ colourmap = {
         'UNKNOWN'    : (  1.0,   1.0, 1.0)
         }
     }
-colourmap["apm"] = colourmap["ardupilot"]
 
 edge_colour = (0.1, 0.1, 0.1)
 
@@ -139,31 +133,8 @@ def plotit(x, y, fields, colors=[]):
                 linestyle = args.linestyle
             else:
                 linestyle = '-'
-            if len(y[i]) > 0 and type(y[i][0]) in text_types:
-                # assume this is a piece of text to be rendered at a point in time
-                last_text_time = -1
-                last_text = None
-                for n in range(0, len(x[i])):
-                    if last_text is None:
-                        last_text = "[" + y[i][n] + "]"
-                        last_text_time = x[i][n]
-                    elif x[i][n] == last_text_time:
-                        last_text += "[" + y[i][n] + "]"
-                    else:
-                        ax.text(x[i][n], 10, last_text,
-                                rotation=90,
-                                alpha=0.3,
-                                verticalalignment='baseline')
-                        last_text = None
-                        last_label_time = x[i][n]
-                if last_text is not None:
-                    ax.text(x[i][n], 10, last_text,
-                            rotation=90,
-                            alpha=0.3,
-                            verticalalignment='baseline')
-            else:
-                ax.plot_date(x[i], y[i], color=color, label=fields[i],
-                             linestyle=linestyle, marker=marker, tz=None)
+            ax.plot_date(x[i], y[i], color=color, label=fields[i],
+                         linestyle=linestyle, marker=marker, tz=None)
         empty = False
     if args.flightmode is not None:
         for i in range(len(modes)-1):
@@ -210,7 +181,7 @@ if args.flightmode is not None and args.xaxis:
     sys.exit(1)
 
 if args.flightmode is not None and args.flightmode not in colourmap:
-    print("Unknown flight controller '%s' in specification of --flightmode (choose from %s)" % (args.flightmode, ",".join(colourmap.keys())))
+    print("Unknown flight controller '%s' in specification of --flightmode" % args.flightmode)
     sys.exit(1)
 
 
@@ -282,7 +253,6 @@ def process_file(filename, timeshift):
     print("Processing %s" % filename)
     mlog = mavutil.mavlink_connection(filename, notimestamps=args.notimestamps, zero_time_base=args.zero_time_base, dialect=args.dialect)
     vars = {}
-    all_messages = {}
 
     while True:
         msg = mlog.recv_match(args.condition)
@@ -293,8 +263,7 @@ def process_file(filename, timeshift):
             # this can happen if the log is corrupt
             # ValueError: year is out of range
             break
-        all_messages[msg.get_type()] = msg
-        add_data(tdays, msg, all_messages, mlog.flightmode)
+        add_data(tdays, msg, mlog.messages, mlog.flightmode)
 
 if len(filenames) == 0:
     print("No files to process")

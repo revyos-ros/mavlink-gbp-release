@@ -13,14 +13,7 @@ import fnmatch
 import json
 import os
 import struct
-import sys
 import time
-
-# Detect python version
-if sys.version_info[0] < 3:
-    runningPython3 = False
-else:
-    runningPython3 = True
 
 try:
     from pymavlink.mavextra import *
@@ -38,12 +31,10 @@ parser.add_argument("--condition", default=None, help="select packets by conditi
 parser.add_argument("-q", "--quiet", action='store_true', help="don't display packets")
 parser.add_argument("-o", "--output", default=None, help="output matching packets to give file")
 parser.add_argument("-p", "--parms", action='store_true', help="preserve parameters in output with -o")
-parser.add_argument("--format", default=None, help="Change the output format between 'standard', 'json', 'csv' and 'mat'. For the CSV output, you must supply types that you want. For MAT output, specify output file with --mat_file")
+parser.add_argument("--format", default=None, help="Change the output format between 'standard', 'json', and 'csv'. For the CSV output, you must supply types that you want.")
 parser.add_argument("--csv_sep", dest="csv_sep", default=",", help="Select the delimiter between columns for the output CSV file. Use 'tab' to specify tabs. Only applies when --format=csv")
 parser.add_argument("--types", default=None, help="types of messages (comma separated with wildcard)")
 parser.add_argument("--nottypes", default=None, help="types of messages not to include (comma separated with wildcard)")
-parser.add_argument("--mat_file", dest="mat_file", help="Output file path for MATLAB file output. Only applies when --format=mat")
-parser.add_argument("-c", "--compress", action='store_true', help="Compress .mat file data")
 parser.add_argument("--dialect", default="ardupilotmega", help="MAVLink dialect")
 parser.add_argument("--zero-time-base", action='store_true', help="use Z time base for DF logs")
 parser.add_argument("--no-bad-data", action='store_true', help="Don't output corrupted messages")
@@ -53,13 +44,8 @@ parser.add_argument("--show-types", action='store_true', help="Shows all message
 parser.add_argument("--source-system", type=int, default=None, help="filter by source system ID")
 parser.add_argument("--source-component", type=int, default=None, help="filter by source component ID")
 parser.add_argument("--link", type=int, default=None, help="filter by comms link ID")
-parser.add_argument("--verbose", action='store_true', help="Dump messages in a much more verbose (but non-parseable) format")
 parser.add_argument("--mav10", action='store_true', help="parse as MAVLink1")
-parser.add_argument("--reduce", type=int, default=0, help="reduce streaming messages")
 parser.add_argument("log", metavar="LOG")
-parser.add_argument("--profile", action='store_true', help="run the Yappi python profiler")
-parser.add_argument("--meta", action='store_true', help="output meta-data msgs even if not matching condition")
-
 args = parser.parse_args()
 
 if not args.mav10:
@@ -70,14 +56,6 @@ import inspect
 from pymavlink import mavutil
 
 
-if args.profile:
-    import yappi    # We do the import here so that we won't barf if run normally and yappi not available
-    yappi.start()
-
-if args.format == 'mat':
-    # Load these modules here, as they're only needed for MAT file creation
-    import scipy.io
-    import numpy as np
 
 filename = args.log
 mlog = mavutil.mavlink_connection(filename, planner_format=args.planner,
@@ -103,32 +81,6 @@ isbin = ext in ['.bin', '.BIN', '.px4log']
 islog = ext in ['.log', '.LOG'] # NOTE: "islog" does not mean a tlog
 istlog = ext in ['.tlog', '.TLOG']
 
-# list of msgs to reduce in rate when --reduce is used
-reduction_msgs = ['NKF*', 'XKF*', 'IMU*', 'AHR2', 'BAR*', 'ATT', 'BAT*', 'CTUN', 'NTUN', 'GP*', 'IMT*', 'MAG*', 'PL', 'POS', 'POW*', 'RATE', 'RC*', 'RFND', 'UBX*', 'VIBE', 'NKQ*', 'MOT*', 'CTRL', 'FTS*', 'DSF', 'CST*', 'LOS*', 'UWB*']
-reduction_yes = set()
-reduction_no = set()
-reduction_count = {}
-
-def reduce_msg(mtype, reduction_ratio):
-    '''return True if this msg should be discarded by reduction'''
-    global reduction_count, reduction_msgs, reduction_yes, reduction_no
-    if mtype in reduction_no:
-        return False
-    if not mtype in reduction_yes:
-        for m in reduction_msgs:
-            if fnmatch.fnmatch(mtype, m):
-                reduction_yes.add(mtype)
-                reduction_count[mtype] = 0
-                break
-        if not mtype in reduction_yes:
-            reduction_no.add(mtype)
-            return False
-    reduction_count[mtype] += 1
-    if reduction_count[mtype] == reduction_ratio:
-        reduction_count[mtype] = 0
-        return False
-    return True
-
 if args.csv_sep == "tab":
     args.csv_sep = "\t"
 
@@ -148,10 +100,7 @@ if istlog and args.format == 'csv': # we know our fields from the get-go
         for type in types:
             try:
                 typeClass = "MAVLink_{0}_message".format(type.lower())
-                if runningPython3:
-                    fields += [type + '.' + x for x in inspect.getfullargspec(getattr(mavutil.mavlink, typeClass).__init__).args[1:]]
-                else:
-                    fields += [type + '.' + x for x in inspect.getargspec(getattr(mavutil.mavlink, typeClass).__init__).args[1:]]
+                fields += [type + '.' + x for x in inspect.getargspec(getattr(mavutil.mavlink, typeClass).__init__).args[1:]]
                 offsets[type] = currentOffset
                 currentOffset += len(fields)
             except IndexError:
@@ -191,14 +140,10 @@ if isbin and args.format == 'csv':
     match_types.append("FMT")
 
 # Keep track of data from the current timestep. If the following timestep has the same data, it's stored in here as well. Output should therefore have entirely unique timesteps.
-MAT = {}    # Dictionary to hold output data for 'mat' format option
 while True:
     m = mlog.recv_match(blocking=args.follow, type=match_types)
     if m is None:
-        # write the final csv line before exiting
-        if args.format == 'csv' and csv_out:
-          csv_out[0] = "{:.8f}".format(last_timestamp)
-          print(args.csv_sep.join(csv_out))
+        # FIXME: Make sure to output the last CSV message before dropping out of this loop
         break
     available_types.add(m.get_type())
     if isbin and m.get_type() == "FMT" and args.format == 'csv':
@@ -206,9 +151,6 @@ while True:
             fields += m.Columns.split(',')
             csv_out = ["" for x in fields]
             print(args.csv_sep.join(fields))
-
-    if args.reduce and reduce_msg(m.get_type(), args.reduce):
-        continue
 
     if output is not None:
         if (isbin or islog) and m.get_type() == "FMT":
@@ -222,8 +164,7 @@ while True:
             output.write(struct.pack('>Q', int(timestamp*1.0e6)) + m.get_msgbuf())
             continue
 
-    if not mavutil.evaluate_condition(args.condition, mlog.messages) and (
-            not (m.get_type() in ['FMT', 'FMTU', 'MULT','PARM','MODE'] and args.meta)):
+    if not mavutil.evaluate_condition(args.condition, mlog.messages):
         continue
     if args.source_system is not None and args.source_system != m.get_srcSystem():
         continue
@@ -311,37 +252,8 @@ while True:
                 csv_out = [str(data[y]) if y != "timestamp" else "" for y in fields]
             else:
                 csv_out = [str(data[y.split('.')[-1]]) if y.split('.')[0] == type and y.split('.')[-1] in data else "" for y in fields]
-    # MAT format outputs data to a .mat file specified through the
-    # --mat_file option
-    elif args.format == 'mat':
-        # If this packet contains data (i.e. is not a FMT
-        # packet), append the data in this packet to the
-        # corresponding list
-        if m.get_type()!='FMT':
-
-            # If this packet type has not yet been
-            # seen, add a new entry to the big dict
-            if m.get_type() not in MAT:
-                MAT[m.get_type()] = {}
-
-            md = m.to_dict()
-            del md['mavpackettype']
-            cols = md.keys()
-            for col in cols:
-                # If this column hasn't had data entered,
-                # make a new key and list
-                if col in MAT[m.get_type()]:
-                    MAT[m.get_type()][col].append(md[col])
-                else:
-                    MAT[m.get_type()][col] = [md[col]]
-    elif args.show_types:
-        # do nothing
-        pass
-    elif args.verbose and istlog:
-        mavutil.dump_message_verbose(sys.stdout, m)
-        print("")
+    # Otherwise we output in a standard Python dict-style format
     else:
-        # Otherwise we output in a standard Python dict-style format
         s = "%s.%02u: %s" % (time.strftime("%Y-%m-%d %H:%M:%S",
                                            time.localtime(timestamp)),
                              int(timestamp*100.0)%100, m)
@@ -349,19 +261,12 @@ while True:
             s += " srcSystem=%u srcComponent=%u" % (m.get_srcSystem(), m.get_srcComponent())
         if args.show_seq:
             s += " seq=%u" % m.get_seq()
-        print(s)
+        if not args.show_types:
+            print(s)
 
     # Update our last timestamp value.
     last_timestamp = timestamp
 
-# Export the .mat file
-if args.format == 'mat':
-    scipy.io.savemat(args.mat_file, MAT, do_compression=args.compress)
-
 if args.show_types:
     for msgType in available_types:
         print(msgType)
-
-if args.profile:
-    yappi.get_func_stats().print_all()
-    yappi.get_thread_stats().print_all()
