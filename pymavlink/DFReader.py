@@ -54,15 +54,12 @@ def u_ord(c):
 	return ord(c) if sys.version_info.major < 3 else c
 
 class DFFormat(object):
-    def __init__(self, type, name, flen, format, columns, oldfmt=None):
+    def __init__(self, type, name, flen, format, columns):
         self.type = type
         self.name = null_term(name)
         self.len = flen
         self.format = format
         self.columns = columns.split(',')
-        self.instance_field = None
-        self.unit_ids = None
-        self.mult_ids = None
 
         if self.columns == ['']:
             self.columns = []
@@ -101,28 +98,11 @@ class DFFormat(object):
             if self.msg_fmts[i] == 'a':
                 self.a_indexes.append(i)
 
-        if oldfmt is not None:
-            self.set_unit_ids(oldfmt.unit_ids)
-            self.set_mult_ids(oldfmt.mult_ids)
-
-    def set_unit_ids(self, unit_ids):
-        '''set unit IDs string from FMTU'''
-        if unit_ids is None:
-            return
-        self.unit_ids = unit_ids
-        instance_idx = unit_ids.find('#')
-        if instance_idx != -1:
-            self.instance_field = self.columns[instance_idx]
-
-    def set_mult_ids(self, mult_ids):
-        '''set mult IDs string from FMTU'''
-        self.mult_ids = mult_ids
-            
     def __str__(self):
         return ("DFFormat(%s,%s,%s,%s)" %
                 (self.type, self.name, self.format, self.columns))
 
-# Swiped into mavgen_python.py
+
 def to_string(s):
     '''desperate attempt to convert a string regardless of what garbage we get'''
     try:
@@ -135,7 +115,7 @@ def to_string(s):
         return s2
     except Exception:
         pass
-    # so it's a nasty one. Let's grab as many characters as we can
+    # so its a nasty one. Let's grab as many characters as we can
     r = ''
     while s != '':
         try:
@@ -159,12 +139,11 @@ def null_term(str):
 
 
 class DFMessage(object):
-    def __init__(self, fmt, elements, apply_multiplier, parent):
+    def __init__(self, fmt, elements, apply_multiplier):
         self.fmt = fmt
         self._elements = elements
         self._apply_multiplier = apply_multiplier
         self._fieldnames = fmt.columns
-        self._parent = parent
 
     def to_dict(self):
         d = {'mavpackettype': self.fmt.name}
@@ -180,15 +159,8 @@ class DFMessage(object):
             i = self.fmt.colhash[field]
         except Exception:
             raise AttributeError(field)
-        if self.fmt.msg_fmts[i] == 'Z' and self.fmt.name == 'FILE':
-            # special case for FILE contens as bytes
-            return self._elements[i]
         if isinstance(self._elements[i], bytes):
-            try:
-                v = self._elements[i].decode("utf-8")
-            except UnicodeDecodeError:
-                # try western europe
-                v = self._elements[i].decode("ISO-8859-1")
+            v = self._elements[i].decode("utf-8")
         else:
             v = self._elements[i]
         if self.fmt.format[i] == 'a':
@@ -201,31 +173,17 @@ class DFMessage(object):
             v *= self.fmt.msg_mults[i]
         return v
 
-    def __setattr__(self, field, value):
-        '''override field setter'''
-        if not field[0].isupper() or not field in self.fmt.colhash:
-            super(DFMessage,self).__setattr__(field, value)
-        else:
-            i = self.fmt.colhash[field]
-            if self.fmt.msg_mults[i] is not None and self._apply_multiplier:
-                value /= self.fmt.msg_mults[i]
-            self._elements[i] = value
-
     def get_type(self):
         return self.fmt.name
 
     def __str__(self):
-        is_py3 = sys.version_info >= (3,0)
         ret = "%s {" % self.fmt.name
         col_count = 0
         for c in self.fmt.columns:
             val = self.__getattr__(c)
             if isinstance(val, float) and math.isnan(val):
                 # quiet nans have more non-zero values:
-                if is_py3:
-                    noisy_nan = bytearray([0x7f, 0xf8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
-                else:
-                    noisy_nan = "\x7f\xf8\x00\x00\x00\x00\x00\x00"
+                noisy_nan = "\x7f\xf8\x00\x00\x00\x00\x00\x00"
                 if struct.pack(">d", val) != noisy_nan:
                     val = "qnan"
             ret += "%s : %s, " % (c, val)
@@ -249,13 +207,11 @@ class DFMessage(object):
             if is_py2:
                 if isinstance(v,unicode): # NOQA
                     v = str(v)
-                elif isinstance(v, array.array):
-                    v = v.tostring()
             else:
                 if isinstance(v,str):
                     v = bytes(v,'ascii')
-                elif isinstance(v, array.array):
-                    v = v.tobytes()
+            if isinstance(v, array.array):
+                v = v.tostring()
             if mul is not None:
                 v /= mul
                 v = int(round(v))
@@ -271,15 +227,6 @@ class DFMessage(object):
     def get_fieldnames(self):
         return self._fieldnames
 
-    def __getitem__(self, key):
-        '''support indexing, allowing for multi-instance sensors in one message'''
-        if self.fmt.instance_field is None:
-            raise IndexError()
-        k = '%s[%s]' % (self.fmt.name, str(key))
-        if not k in self._parent.messages:
-            raise IndexError()
-        return self._parent.messages[k]
-
 
 class DFReaderClock(object):
     '''base class for all the different ways we count time in logs'''
@@ -291,7 +238,7 @@ class DFReaderClock(object):
     def _gpsTimeToTime(self, week, msec):
         '''convert GPS week and TOW to a time in seconds since 1970'''
         epoch = 86400*(10*365 + int((1980-1969)/4) + 1 + 6 - 2)
-        return epoch + 86400*7*week + msec*0.001 - 18
+        return epoch + 86400*7*week + msec*0.001 - 15
 
     def set_timebase(self, base):
         self.timebase = base
@@ -434,7 +381,7 @@ class DFReaderClock_gps_interpolated(DFReaderClock):
                     # better clock was found.
                     return
 
-        if gps_week is None and hasattr(m,'Wk'):
+        if gps_week is None:
             # AvA-style logs
             gps_week = getattr(m, 'Wk')
             gps_timems = getattr(m, 'TWk')
@@ -473,16 +420,10 @@ class DFReader(object):
         self.verbose = False
         self.params = {}
         self._flightmodes = None
-        self.messages = {}
 
     def _rewind(self):
         '''reset state on rewind'''
-        # be careful not to replace self.messages with a new hash;
-        # some people have taken a reference to self.messages and we
-        # need their messages to disappear to.  If they want their own
-        # copy they can copy.copy it!
-        self.messages.clear()
-        self.messages['MAV'] = self
+        self.messages = {'MAV': self}
         if self._flightmodes is not None and len(self._flightmodes) > 0:
             self.flightmode = self._flightmodes[0][0]
         else:
@@ -611,14 +552,11 @@ class DFReader(object):
         '''add a new message'''
         type = m.get_type()
         self.messages[type] = m
-        if m.fmt.instance_field is not None:
-            i = m.__getattr__(m.fmt.instance_field)
-            self.messages["%s[%s]" % (type, str(i))] = m
 
         if self.clock:
             self.clock.message_arrived(m)
 
-        if type == 'MSG' and hasattr(m,'Message'):
+        if type == 'MSG':
             if m.Message.find("Rover") != -1:
                 self.mav_type = mavutil.mavlink.MAV_TYPE_GROUND_ROVER
             elif m.Message.find("Plane") != -1:
@@ -629,10 +567,8 @@ class DFReader(object):
                 self.mav_type = mavutil.mavlink.MAV_TYPE_ANTENNA_TRACKER
             elif m.Message.find("ArduSub") != -1:
                 self.mav_type = mavutil.mavlink.MAV_TYPE_SUBMARINE
-            elif m.Message.find("Blimp") != -1:
-                self.mav_type = mavutil.mavlink.MAV_TYPE_AIRSHIP
         if type == 'MODE':
-            if hasattr(m,'Mode') and isinstance(m.Mode, str):
+            if isinstance(m.Mode, str):
                 self.flightmode = m.Mode.upper()
             elif 'ModeNum' in m._fieldnames:
                 mapping = mavutil.mode_mapping_bynumber(self.mav_type)
@@ -640,7 +576,7 @@ class DFReader(object):
                     self.flightmode = mapping[m.ModeNum]
                 else:
                     self.flightmode = 'UNKNOWN'
-            elif hasattr(m,'Mode'):
+            else:
                 self.flightmode = mavutil.mode_string_acm(m.Mode)
         if type == 'STAT' and 'MainState' in m._fieldnames:
             self.flightmode = mavutil.mode_string_px4(m.MainState)
@@ -711,7 +647,7 @@ class DFReader_binary(DFReader):
     def __init__(self, filename, zero_time_base=False, progress_callback=None):
         DFReader.__init__(self)
         # read the whole file into memory for simplicity
-        self.filehandle = open(filename, 'r')
+        self.filehandle = open(filename, 'rb')
         self.filehandle.seek(0, 2)
         self.data_len = self.filehandle.tell()
         self.filehandle.seek(0)
@@ -763,7 +699,6 @@ class DFReader_binary(DFReader):
             self.offsets.append([])
             self.counts.append(0)
         fmt_type = 0x80
-        fmtu_type = None
         ofs = 0
         pct = 0
         HEAD1 = self.HEAD1
@@ -773,28 +708,20 @@ class DFReader_binary(DFReader):
         while ofs+3 < self.data_len:
             hdr = self.data_map[ofs:ofs+3]
             if hdr[0] != HEAD1 or hdr[1] != HEAD2:
-                # avoid end of file garbage, 528 bytes has been use consistently throughout this implementation
-                # but it needs to be at least 249 bytes which is the block based logging page size (256) less a 6 byte header and
-                # one byte of data. Block based logs are sized in pages which means they can have up to 249 bytes of trailing space.
-                if self.data_len - ofs >= 528 or self.data_len < 528:
-                    print("bad header 0x%02x 0x%02x at %d" % (u_ord(hdr[0]), u_ord(hdr[1]), ofs), file=sys.stderr)
-                ofs += 1
-                continue
+                print("bad header 0x%02x 0x%02x" % (u_ord(hdr[0]), u_ord(hdr[1])), file=sys.stderr)
+                break
             mtype = u_ord(hdr[2])
             self.offsets[mtype].append(ofs)
 
             if lengths[mtype] == -1:
                 if not mtype in self.formats:
-                    if self.data_len - ofs >= 528 or self.data_len < 528:
-                        print("unknown msg type 0x%02x (%u) at %d" % (mtype, mtype, ofs),
-                              file=sys.stderr)
+                    print("unknown msg type 0x%02x (%u)" % (mtype, mtype),
+                          file=sys.stderr)
                     break
                 self.offset = ofs
                 self._parse_next()
                 fmt = self.formats[mtype]
                 lengths[mtype] = fmt.len
-            elif self.formats[mtype].instance_field is not None:
-                self._parse_next()
 
             self.counts[mtype] += 1
             mlen = lengths[mtype]
@@ -805,31 +732,13 @@ class DFReader_binary(DFReader):
                     break
                 fmt = self.formats[mtype]
                 elements = list(struct.unpack(fmt.msg_struct, body))
-                ftype = elements[0]
                 mfmt = DFFormat(
-                    ftype,
+                    elements[0],
                     null_term(elements[2]), elements[1],
-                    null_term(elements[3]), null_term(elements[4]),
-                    oldfmt=self.formats.get(ftype,None))
-                self.formats[ftype] = mfmt
+                    null_term(elements[3]), null_term(elements[4]))
+                self.formats[elements[0]] = mfmt
                 self.name_to_id[mfmt.name] = mfmt.type
                 self.id_to_name[mfmt.type] = mfmt.name
-                if mfmt.name == 'FMTU':
-                    fmtu_type = mfmt.type
-
-            if fmtu_type is not None and mtype == fmtu_type:
-                fmt = self.formats[mtype]
-                body = self.data_map[ofs+3:ofs+mlen]
-                if len(body)+3 < mlen:
-                    break
-                elements = list(struct.unpack(fmt.msg_struct, body))
-                ftype = int(elements[1])
-                if ftype in self.formats:
-                    fmt2 = self.formats[ftype]
-                    if 'UnitIds' in fmt.colhash:
-                        fmt2.set_unit_ids(null_term(elements[fmt.colhash['UnitIds']]))
-                    if 'MultIds' in fmt.colhash:
-                        fmt2.set_mult_ids(null_term(elements[fmt.colhash['MultIds']]))
 
             ofs += mlen
             if progress_callback is not None:
@@ -954,7 +863,7 @@ class DFReader_binary(DFReader):
                 # we can have garbage at the end of an APM2 log
                 return None
             # we should also cope with other corruption; logs
-            # transferred via DataFlash_MAVLink may have blocks of 0s
+            # transfered via DataFlash_MAVLink may have blocks of 0s
             # in them, for example
             print("Failed to parse %s/%s with len %u (remaining %u)" %
                   (fmt.name, fmt.msg_struct, len(body), self.remaining),
@@ -974,35 +883,17 @@ class DFReader_binary(DFReader):
             # add to formats
             # name, len, format, headings
             try:
-                ftype = elements[0]
-                mfmt = DFFormat(
-                    ftype,
+                self.formats[elements[0]] = DFFormat(
+                    elements[0],
                     null_term(elements[2]), elements[1],
-                    null_term(elements[3]), null_term(elements[4]),
-                    oldfmt=self.formats.get(ftype,None))
-                self.formats[ftype] = mfmt
+                    null_term(elements[3]), null_term(elements[4]))
             except Exception:
                 return self._parse_next()
 
         self.offset += fmt.len - 3
         self.remaining = self.data_len - self.offset
-        m = DFMessage(fmt, elements, True, self)
-
-        if m.fmt.name == 'FMTU':
-            # add to units information
-            FmtType = int(elements[0])
-            UnitIds = elements[1]
-            MultIds = elements[2]
-            if FmtType in self.formats:
-                fmt = self.formats[FmtType]
-                fmt.set_unit_ids(UnitIds)
-                fmt.set_mult_ids(MultIds)
-
-        try:
-            self._add_msg(m)
-        except Exception as ex:
-            print("bad msg at offset %u" % self.offset, ex)
-            pass
+        m = DFMessage(fmt, elements, True)
+        self._add_msg(m)
         self.percent = 100.0 * (self.offset / float(self.data_len))
 
         return m
@@ -1011,7 +902,7 @@ class DFReader_binary(DFReader):
 def DFReader_is_text_log(filename):
     '''return True if a file appears to be a valid text log'''
     with open(filename, 'r') as f:
-        ret = (f.read(8000).find('FMT,') != -1)
+        ret = (f.read(8000).find('FMT, ') != -1)
 
     return ret
 
@@ -1024,13 +915,11 @@ class DFReader_text(DFReader):
         self.filehandle = open(filename, 'r')
         self.filehandle.seek(0, 2)
         self.data_len = self.filehandle.tell()
-        self.filehandle.seek(0, 0)
         if platform.system() == "Windows":
             self.data_map = mmap.mmap(self.filehandle.fileno(), self.data_len, None, mmap.ACCESS_READ)
         else:
             self.data_map = mmap.mmap(self.filehandle.fileno(), self.data_len, mmap.MAP_PRIVATE, mmap.PROT_READ)
         self.offset = 0
-        self.delimiter = ", "
 
         self.formats = {
             'FMT': DFFormat(0x80,
@@ -1039,7 +928,6 @@ class DFReader_text(DFReader):
                             'BBnNZ',
                             "Type,Length,Name,Format,Columns")
         }
-        self.id_to_name = { 0x80 : 'FMT' }
         self._rewind()
         self._zero_time_base = zero_time_base
         self.init_clock()
@@ -1051,10 +939,6 @@ class DFReader_text(DFReader):
         DFReader._rewind(self)
         # find the first valid line
         self.offset = self.data_map.find(b'FMT, ')
-        if self.offset == -1:
-            self.offset = self.data_map.find(b'FMT,')
-            if self.offset != -1:
-                self.delimiter = ","
         self.type_list = None
 
     def rewind(self):
@@ -1071,7 +955,7 @@ class DFReader_text(DFReader):
 
         while ofs+16 < self.data_len:
             mtype = self.data_map[ofs:ofs+4]
-            if mtype[3] == b',':
+            if mtype[3] == ',':
                 mtype = mtype[0:3]
             if not mtype in self.offsets:
                 self.counts[mtype] = 0
@@ -1086,10 +970,6 @@ class DFReader_text(DFReader):
                 self.offset = ofs
                 self._parse_next()
 
-            if mtype == "FMTU":
-                self.offset = ofs
-                self._parse_next()
-                
             ofs = self.data_map.find(b"\n", ofs)
             if ofs == -1:
                 break
@@ -1143,7 +1023,7 @@ class DFReader_text(DFReader):
             s = self.data_map[self.offset:endline].rstrip()
             if sys.version_info.major >= 3:
                 s = s.decode('utf-8')
-            elements = s.split(self.delimiter)
+            elements = s.split(", ")
             self.offset = endline+1
             if len(elements) >= 2:
                 # this_line is good
@@ -1176,34 +1056,20 @@ class DFReader_text(DFReader):
         if name == 'FMT':
             # add to formats
             # name, len, format, headings
-            ftype = int(elements[0])
-            fname = elements[2]
-            if self.delimiter == ",":
-                elements = elements[0:4] + [",".join(elements[4:])]
-            columns = elements[4]
-            if fname == 'FMT' and columns == 'Type,Length,Name,Format':
+            if elements[2] == 'FMT' and elements[4] == 'Type,Length,Name,Format':
                 # some logs have the 'Columns' column missing from text logs
-                columns = "Type,Length,Name,Format,Columns"
-            new_fmt = DFFormat(ftype,
-                               fname,
+                elements[4] = "Type,Length,Name,Format,Columns"
+            new_fmt = DFFormat(int(elements[0]),
+                               elements[2],
                                int(elements[1]),
                                elements[3],
-                               columns,
-                               oldfmt=self.formats.get(ftype,None))
-            self.formats[fname] = new_fmt
-            self.id_to_name[ftype] = fname
+                               elements[4])
+            self.formats[elements[2]] = new_fmt
 
         try:
-            m = DFMessage(fmt, elements, False, self)
+            m = DFMessage(fmt, elements, False)
         except ValueError:
             return self._parse_next()
-
-        if m.get_type() == 'FMTU':
-            fmtid = getattr(m, 'FmtType', None)
-            if fmtid is not None and fmtid in self.id_to_name:
-                fmtu = self.formats[self.id_to_name[fmtid]]
-                fmtu.set_unit_ids(getattr(m, 'UnitIds', None))
-                fmtu.set_mult_ids(getattr(m, 'MultIds', None))
 
         self._add_msg(m)
 
@@ -1237,13 +1103,9 @@ if __name__ == "__main__":
         log = DFReader_text(filename)
     else:
         log = DFReader_binary(filename)
-    #bfile = filename + ".bin"
-    #bout = open(bfile, 'wb')
     while True:
         m = log.recv_msg()
         if m is None:
             break
-        #bout.write(m.get_msgbuf())
-        #print(m)
     if use_profiler:
         profiler.print_stats()
