@@ -49,7 +49,7 @@ def generate_mavlink_h(directory, xml):
 #ifndef MAVLINK_H
 #define MAVLINK_H
 
-#define MAVLINK_PRIMARY_XML_HASH ${xml_hash}
+#define MAVLINK_PRIMARY_XML_IDX ${xml_idx}
 
 #ifndef MAVLINK_STX
 #define MAVLINK_STX ${protocol_marker}
@@ -94,8 +94,8 @@ def generate_main_h(directory, xml):
     #error Wrong include order: MAVLINK_${basename_upper}.H MUST NOT BE DIRECTLY USED. Include mavlink.h from the same directory instead or set ALL AND EVERY defines from MAVLINK.H manually accordingly, including the #define MAVLINK_H call.
 #endif
 
-#undef MAVLINK_THIS_XML_HASH
-#define MAVLINK_THIS_XML_HASH ${xml_hash}
+#undef MAVLINK_THIS_XML_IDX
+#define MAVLINK_THIS_XML_IDX ${xml_idx}
 
 #ifdef __cplusplus
 extern "C" {
@@ -148,10 +148,10 @@ ${{message:#include "./mavlink_msg_${name_lower}.h"
 ${{include_list:#include "../${base}/${base}.h"
 }}
 
-#undef MAVLINK_THIS_XML_HASH
-#define MAVLINK_THIS_XML_HASH ${xml_hash}
+#undef MAVLINK_THIS_XML_IDX
+#define MAVLINK_THIS_XML_IDX ${xml_idx}
 
-#if MAVLINK_THIS_XML_HASH == MAVLINK_PRIMARY_XML_HASH
+#if MAVLINK_THIS_XML_IDX == MAVLINK_PRIMARY_XML_IDX
 # define MAVLINK_MESSAGE_INFO {${message_info_array}}
 # define MAVLINK_MESSAGE_NAMES {${message_name_array}}
 # if MAVLINK_COMMAND_24BIT
@@ -177,11 +177,11 @@ def generate_message_h(directory, m):
 
 #define MAVLINK_MSG_ID_${name} ${id}
 
-${MAVPACKED_START}
+MAVPACKED(
 typedef struct __mavlink_${name_lower}_t {
 ${{ordered_fields: ${type} ${name}${array_suffix}; /*< ${units} ${description}*/
 }}
-}${MAVPACKED_END} mavlink_${name_lower}_t;
+}) mavlink_${name_lower}_t;
 
 #define MAVLINK_MSG_ID_${name}_LEN ${wire_length}
 #define MAVLINK_MSG_ID_${name}_MIN_LEN ${wire_min_length}
@@ -349,7 +349,7 @@ static inline void mavlink_msg_${name_lower}_send_struct(mavlink_channel_t chan,
 
 #if MAVLINK_MSG_ID_${name}_LEN <= MAVLINK_MAX_PAYLOAD_LEN
 /*
-  This variant of _send() can be used to save stack space by re-using
+  This varient of _send() can be used to save stack space by re-using
   memory from the receive buffer.  The caller provides a
   mavlink_message_t which is the size of a full mavlink message. This
   is usually the receive buffer for the channel, and allows a reply to an
@@ -418,7 +418,7 @@ def generate_testsuite_h(directory, xml):
     t.write(f, '''
 /** @file
  *    @brief MAVLink comm protocol testsuite generated from ${basename}.xml
- *    @see https://mavlink.io/en/
+ *    @see http://qgroundcontrol.org/mavlink/
  */
 #pragma once
 #ifndef ${basename_upper}_TESTSUITE_H
@@ -499,11 +499,6 @@ static void mavlink_test_${name_lower}(uint8_t system_id, uint8_t component_id, 
     mavlink_msg_${name_lower}_send(MAVLINK_COMM_1 ${{arg_fields:, packet1.${name} }});
     mavlink_msg_${name_lower}_decode(last_msg, &packet2);
         MAVLINK_ASSERT(memcmp(&packet1, &packet2, sizeof(packet1)) == 0);
-
-#ifdef MAVLINK_HAVE_GET_MESSAGE_INFO
-    MAVLINK_ASSERT(mavlink_get_message_info_by_name("${name}") != NULL);
-    MAVLINK_ASSERT(mavlink_get_message_info_by_id(MAVLINK_MSG_ID_${name}) != NULL);
-#endif
 }
 }}
 
@@ -575,7 +570,7 @@ def generate_one(basename, xml):
     # work out the included headers
     xml.include_list = []
     for i in xml.include:
-        base = os.path.basename(i)[:-4]
+        base = i[:-4]
         xml.include_list.append(mav_include(base))
 
     # form message lengths array
@@ -679,12 +674,6 @@ def generate_one(basename, xml):
                     f.c_test_value = "%sLL" % f.test_value                    
                 else:
                     f.c_test_value = f.test_value
-        if m.needs_pack:
-            m.MAVPACKED_START = "MAVPACKED("
-            m.MAVPACKED_END = ")"
-        else:
-            m.MAVPACKED_START = ""
-            m.MAVPACKED_END = ""
 
     # cope with uint8_t_mavlink_version
     for m in xml.message:
@@ -716,6 +705,6 @@ def generate(basename, xml_list):
 
     for idx in range(len(xml_list)):
         xml = xml_list[idx]
-        xml.xml_hash = hash(xml.basename)        
+        xml.xml_idx = idx
         generate_one(basename, xml)
     copy_fixed_headers(basename, xml_list[0])

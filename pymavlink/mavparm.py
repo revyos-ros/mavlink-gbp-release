@@ -11,19 +11,9 @@ class MAVParmDict(dict):
     def __init__(self, *args):
         dict.__init__(self, args)
         # some parameters should not be loaded from files
-        self.exclude_load = [
-            'ARSPD_OFFSET',
-            'CMD_INDEX',
-            'CMD_TOTAL',
-            'FENCE_TOTAL',
-            'FORMAT_VERSION',
-            'GND_ABS_PRESS',
-            'GND_TEMP',
-            'LOG_LASTFILE',
-            'MIS_TOTAL',
-            'SYSID_SW_MREV',
-            'SYS_NUM_RESETS',
-        ]
+        self.exclude_load = ['SYSID_SW_MREV', 'SYS_NUM_RESETS', 'ARSPD_OFFSET', 'GND_ABS_PRESS',
+                             'GND_TEMP', 'CMD_TOTAL', 'CMD_INDEX', 'LOG_LASTFILE', 'FENCE_TOTAL',
+                             'FORMAT_VERSION' ]
         self.mindelta = 0.000001
 
 
@@ -51,7 +41,7 @@ class MAVParmDict(dict):
             vfloat, = struct.unpack(">f", vstr)
         else:
             vfloat = float(value)
-
+                
         while retries > 0 and not got_ack:
             retries -= 1
             mav.param_set_send(name.upper(), vfloat, parm_type=parm_type)
@@ -148,7 +138,7 @@ class MAVParmDict(dict):
             if fnmatch.fnmatch(str(p).upper(), wildcard.upper()):
                 self.show_param_value(str(p), "%f" % self.get(p))
 
-    def diff(self, filename, wildcard='*', use_excludes=True, use_tabs=False, show_only1=True, show_only2=True):
+    def diff(self, filename, wildcard='*', use_excludes=True):
         '''show differences with another parameter file'''
         other = MAVParmDict()
         if not other.load(filename, use_excludes=use_excludes):
@@ -159,14 +149,11 @@ class MAVParmDict(dict):
                 continue
             if not k in other:
                 value = float(self[k])
-                if show_only2:
-                    print("%-16.16s              %12.4f" % (k, value))
+                print("%-16.16s              %12.4f" % (k, value))
             elif not k in self:
-                if show_only1:
-                    print("%-16.16s %12.4f" % (k, float(other[k])))
+                print("%-16.16s %12.4f" % (k, float(other[k])))
             elif abs(self[k] - other[k]) > self.mindelta:
                 value = float(self[k])
-                if use_tabs:
-                    print("%s\t%.4f\t%.4f" % (k, other[k], value))
-                else:
-                    print("%-16.16s %12.4f %12.4f" % (k, other[k], value))
+                print("%-16.16s %12.4f %12.4f" % (k, other[k], value))
+                
+        

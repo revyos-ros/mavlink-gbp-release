@@ -33,7 +33,7 @@ class MAVParseError(Exception):
         return self.message
 
 class MAVField(object):
-    def __init__(self, name, type, print_format, xml, description='', enum='', display='', units='', instance=False):
+    def __init__(self, name, type, print_format, xml, description='', enum='', display='', units=''):
         self.name = name
         self.name_upper = name.upper()
         self.description = description
@@ -44,7 +44,6 @@ class MAVField(object):
         self.omit_arg = False
         self.const_value = None
         self.print_format = print_format
-        self.instance = instance
         lengths = {
         'float'    : 4,
         'double'   : 8,
@@ -132,7 +131,6 @@ class MAVType(object):
         self.fields = []
         self.fieldnames = []
         self.extensions_start = None
-        self.needs_pack = False
 
     def base_fields(self):
         '''return number of non-extended fields'''
@@ -174,14 +172,13 @@ class MAVEnumEntry(object):
         self.origin_line = origin_line
 
 class MAVEnum(object):
-    def __init__(self, name, linenumber, description='', bitmask=False):
+    def __init__(self, name, linenumber, description=''):
         self.name = name
         self.description = description
         self.entry = []
         self.start_value = None
         self.highest_value = 0
         self.linenumber = linenumber
-        self.bitmask = bitmask
 
 class MAVXML(object):
     '''parse a mavlink XML file'''
@@ -255,14 +252,12 @@ class MAVXML(object):
                 units = attrs.get('units', '')
                 if units:
                     units = '[' + units + ']'
-                instance = attrs.get('instance', False)
-                new_field = MAVField(attrs['name'], attrs['type'], print_format, self, enum=enum, display=display, units=units, instance=instance)
+                new_field = MAVField(attrs['name'], attrs['type'], print_format, self, enum=enum, display=display, units=units)
                 if self.message[-1].extensions_start is None or self.allow_extensions:
                     self.message[-1].fields.append(new_field)
             elif in_element == "mavlink.enums.enum":
                 check_attrs(attrs, ['name'], 'enum')
-                bitmask = 'bitmask' in attrs and attrs['bitmask'] == 'true'
-                self.enum.append(MAVEnum(attrs['name'], p.CurrentLineNumber, bitmask=bitmask))
+                self.enum.append(MAVEnum(attrs['name'], p.CurrentLineNumber))
             elif in_element == "mavlink.enums.enum.entry":
                 check_attrs(attrs, ['name'], 'enum entry')
                 # determine value and if it was automatically assigned (for possible merging later)
@@ -312,7 +307,7 @@ class MAVXML(object):
             elif in_element == "mavlink.enums.enum.entry.description":
                 self.enum[-1].entry[-1].description += data
             elif in_element == "mavlink.enums.enum.entry.param":
-                self.enum[-1].entry[-1].param[-1].description += data
+                self.enum[-1].entry[-1].param[-1].set_description(data.strip())
             elif in_element == "mavlink.version":
                 self.version = int(data)
             elif in_element == "mavlink.include":
@@ -331,7 +326,9 @@ class MAVXML(object):
         for current_enum in self.enum:
             if not 'MAV_CMD' in current_enum.name:
                 continue
+            print(current_enum.name)
             for enum_entry in current_enum.entry:
+                print(enum_entry.name)
                 if len(enum_entry.param) == 7:
                     continue
                 params_dict=dict()
@@ -378,7 +375,6 @@ class MAVXML(object):
             m.message_flags = 0
             m.target_system_ofs = 0
             m.target_component_ofs = 0
-            m.field_offsets = {}
             
             if self.sort_fields:
                 # when we have extensions we only sort up to the first extended field
@@ -402,14 +398,7 @@ class MAVXML(object):
             for i in range(len(m.ordered_fields)):
                 f = m.ordered_fields[i]
                 f.wire_offset = m.wire_length
-                m.field_offsets[f.name] = f.wire_offset
                 m.wire_length += f.wire_length
-                field_el_length = f.wire_length
-                if f.array_length > 1:
-                    field_el_length = f.wire_length / f.array_length
-                if f.wire_offset % field_el_length != 0:
-                    # misaligned field, structure will need packing in C
-                    m.needs_pack = True
                 if m.extensions_start is None or i < m.extensions_start:
                     m.wire_min_length = m.wire_length
                 m.ordered_fieldnames.append(f.name)
@@ -442,13 +431,16 @@ class MAVXML(object):
             if m.wire_length > self.largest_payload:
                 self.largest_payload = m.wire_length
 
+            if m.wire_length+8 > 64:
+                print("Note: message %s is longer than 64 bytes long (%u bytes), which can cause fragmentation since many radio modems use 64 bytes as maximum air transfer unit." % (m.name, m.wire_length+8))
+
     def __str__(self):
         return "MAVXML for %s from %s (%u message, %u enums)" % (
             self.basename, self.filename, len(self.message), len(self.enum))
 
 
 def message_checksum(msg):
-    '''calculate CRC-16/MCRF4XX checksum of the key fields of a message, so we
+    '''calculate a 8-bit checksum of the key fields of a message, so we
        can detect incompatible XML changes'''
     from .mavcrc import x25crc
     crc = x25crc()

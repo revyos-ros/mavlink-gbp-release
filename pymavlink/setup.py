@@ -13,8 +13,8 @@ except LookupError:
 from setuptools import setup, Extension
 import glob, os, shutil, fnmatch, platform, sys
 
-sys.path.insert(0, os.path.dirname(__file__))
-from __init__ import __version__
+version = '2.3.5'
+
 
 def generate_content():
     # generate the file content...
@@ -23,7 +23,6 @@ def generate_content():
     # path to message_definitions directory
     if os.getenv("MDEF",None) is not None:
         mdef_paths = [os.getenv("MDEF")]
-
     else:
         mdef_paths = [os.path.join('..', 'message_definitions'),
                       os.path.join('mavlink', 'message_definitions'),
@@ -76,14 +75,7 @@ def generate_content():
                 sys.exit(1)
 
 extensions = []  # Assume we might be unable to build native code
-# check if we need to compile mavnative
-disable_mavnative = os.getenv("DISABLE_MAVNATIVE", False)
-if type(disable_mavnative) is str and disable_mavnative in ["True", "true", "1"]:
-    disable_mavnative = True
-else:
-    disable_mavnative = False
-
-if platform.system() != 'Windows' and not disable_mavnative:
+if platform.system() != 'Windows':
     extensions = [ Extension('mavnative',
                    sources=['mavnative/mavnative.c'],
                    include_dirs=[
@@ -93,9 +85,7 @@ if platform.system() != 'Windows' and not disable_mavnative:
                        ]
                    ) ]
 else:
-    print("###################################")
-    print("Skipping mavnative")
-    print("###################################")
+    print("Skipping mavnative due to Windows possibly missing a compiler...")
 
 
 class custom_build_py(build_py):
@@ -107,7 +97,7 @@ class custom_build_py(build_py):
 
 
 setup (name = 'pymavlink',
-       version = __version__,
+       version = version,
        description = 'Python MAVLink code',
        long_description = ('A Python library for handling MAVLink protocol streams and log files. This allows for the '
                            'creation of simple scripts to analyse telemetry logs from autopilots such as ArduPilot which use '
@@ -115,17 +105,14 @@ setup (name = 'pymavlink',
                            'scripts that use pymavlink. For more information about the MAVLink protocol see '
                            'https://mavlink.io/en/'),
        url = 'https://github.com/ArduPilot/pymavlink/',
-       classifiers=['Development Status :: 5 - Production/Stable',
+       classifiers=['Development Status :: 4 - Beta',
                     'Environment :: Console',
                     'Intended Audience :: Science/Research',
                     'License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)',
                     'Operating System :: OS Independent',
                     'Programming Language :: Python :: 2.7',
-                    'Programming Language :: Python :: 3.6',
-                    'Programming Language :: Python :: 3.7',
-                    'Programming Language :: Python :: 3.8',
-                    'Programming Language :: Python :: 3.9',
-                    'Topic :: Scientific/Engineering',
+                    'Programming Language :: Python :: 3.5',
+                    'Topic :: Scientific/Engineering'
                     ],
        license='LGPLv3',
        package_dir = { 'pymavlink' : '.' },
@@ -139,7 +126,7 @@ setup (name = 'pymavlink',
                                                      'C/include_v2.0/*.h',
                                                      'C/include_v2.0/*.hpp',
                                                      'CPP11/include_v2.0/*.hpp',
-                                                     'CS/*.*',
+                                                     'CS/common/*.cs',
                                                      'swift/*.swift',],
                         'pymavlink'              : ['mavnative/*.h',
                                                     'message_definitions/v*/*.xml']
@@ -166,10 +153,7 @@ setup (name = 'pymavlink',
                    'tools/mavfft.py',
                    'tools/mavfft_isb.py',
                    'tools/mavsummarize.py',
-                   'tools/MPU6KSearch.py',
-                   'tools/mavlink_bitmask_decoder.py',
-                   'tools/magfit_WMM.py',
-       ],
+                   'tools/MPU6KSearch.py'],
        install_requires=[
             'future',
             'lxml',
