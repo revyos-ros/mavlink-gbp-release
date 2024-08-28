@@ -1,6 +1,6 @@
 /** @file
  *	@brief MAVLink comm protocol generated from test.xml
- *	@see https://mavlink.io/en/
+ *	@see http://qgroundcontrol.org/mavlink/
  */
 #ifndef TEST_H
 #define TEST_H

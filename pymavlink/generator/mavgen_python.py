@@ -31,7 +31,7 @@ from builtins import range
 from builtins import object
 import struct, array, time, json, os, sys, platform
 
-from pymavlink.generator.mavcrc import x25crc
+from ...generator.mavcrc import x25crc
 import hashlib
 
 WIRE_PROTOCOL_VERSION = '${WIRE_PROTOCOL_VERSION}'
@@ -60,10 +60,6 @@ else:
     # mavnative isn't supported for MAVLink2 yet
     native_supported = False
 
-# allow MAV_IGNORE_CRC=1 to ignore CRC, allowing some
-# corrupted msgs to be seen
-MAVLINK_IGNORE_CRC = os.environ.get("MAV_IGNORE_CRC",0)
-
 # some base types from mavlink_types.h
 MAVLINK_TYPE_CHAR     = 0
 MAVLINK_TYPE_UINT8_T  = 1
@@ -76,32 +72,6 @@ MAVLINK_TYPE_UINT64_T = 7
 MAVLINK_TYPE_INT64_T  = 8
 MAVLINK_TYPE_FLOAT    = 9
 MAVLINK_TYPE_DOUBLE   = 10
-
-
-# swiped from DFReader.py
-def to_string(s):
-    '''desperate attempt to convert a string regardless of what garbage we get'''
-    try:
-        return s.decode("utf-8")
-    except Exception as e:
-        pass
-    try:
-        s2 = s.encode('utf-8', 'ignore')
-        x = u"%s" % s2
-        return s2
-    except Exception:
-        pass
-    # so it's a nasty one. Let's grab as many characters as we can
-    r = ''
-    try:
-        for c in s:
-            r2 = r + c
-            r2 = r2.encode('ascii', 'ignore')
-            x = u"%s" % r2
-            r = r2
-    except Exception:
-        pass
-    return r + '_XXX'
 
 
 class MAVLink_header(object):
@@ -135,14 +105,12 @@ class MAVLink_message(object):
         self._type       = name
         self._signed     = False
         self._link_id    = None
-        self._instances  = None
-        self._instance_field = None
 
     def format_attr(self, field):
         '''override field getter'''
         raw_attr = getattr(self,field)
         if isinstance(raw_attr, bytes):
-            raw_attr = to_string(raw_attr).rstrip("\\00")
+            raw_attr = raw_attr.decode("utf-8").rstrip("\\00")
         return raw_attr
 
     def get_msgbuf(self):
@@ -244,11 +212,7 @@ class MAVLink_message(object):
         if WIRE_PROTOCOL_VERSION != '1.0' and not force_mavlink1:
             # in MAVLink2 we can strip trailing zeros off payloads. This allows for simple
             # variable length arrays and smaller packets
-            nullbyte = chr(0)
-            # in Python2, type("fred') is str but also type("fred")==bytes
-            if str(type(payload)) == "<class 'bytes'>":
-                nullbyte = 0
-            while plen > 1 and payload[plen-1] == nullbyte:
+            while plen > 1 and payload[plen-1] == chr(0):
                 plen -= 1
         self._payload = payload[:plen]
         incompat_flags = 0
@@ -267,14 +231,6 @@ class MAVLink_message(object):
         if mav.signing.sign_outgoing and not force_mavlink1:
             self.sign_packet(mav)
         return self._msgbuf
-
-    def __getitem__(self, key):
-        '''support indexing, allowing for multi-instance sensors in one message'''
-        if self._instances is None:
-            raise IndexError()
-        if not key in self._instances:
-            raise IndexError()
-        return self._instances[key]
 
 """, {'FILELIST': ",".join(args),
       'PROTOCOL_MARKER': xml.protocol_marker,
@@ -316,23 +272,9 @@ def generate_message_ids(outf, msgs):
     print("Generating message IDs")
     outf.write("\n# message IDs\n")
     outf.write("MAVLINK_MSG_ID_BAD_DATA = -1\n")
-    outf.write("MAVLINK_MSG_ID_UNKNOWN = -2\n")
     for m in msgs:
         outf.write("MAVLINK_MSG_ID_%s = %u\n" % (m.name.upper(), m.id))
 
-
-def byname_hash_from_field_attribute(m, attribute):
-    strings = []
-    for field in m.fields:
-        value = getattr(field, attribute, None)
-        if value is None or value == "":
-            continue
-        if attribute == 'units':
-            # hack; remove the square brackets further up
-            if value[0] == "[":
-                value = value[1:-1]
-        strings.append('"%s": "%s"' % (field.name, value))
-    return ", ".join(strings)
 
 def generate_classes(outf, msgs):
     print("Generating class definitions")
@@ -341,17 +283,8 @@ def generate_classes(outf, msgs):
         classname = "MAVLink_%s_message" % m.name.lower()
         fieldname_str = ", ".join(["'%s'" % s for s in m.fieldnames])
         ordered_fieldname_str = ", ".join(["'%s'" % s for s in m.ordered_fieldnames])
-        fielddisplays_str = byname_hash_from_field_attribute(m, "display")
-        fieldenums_str = byname_hash_from_field_attribute(m, "enum")
-        fieldunits_str = byname_hash_from_field_attribute(m, "units")
 
         fieldtypes_str = ", ".join(["'%s'" % s for s in m.fieldtypes])
-        if m.instance_field is not None:
-            instance_field = "'%s'" % m.instance_field
-            instance_offset = m.field_offsets[m.instance_field]
-        else:
-            instance_field = "None"
-            instance_offset = -1
         outf.write("""
 class %s(MAVLink_message):
         '''
@@ -362,9 +295,6 @@ class %s(MAVLink_message):
         fieldnames = [%s]
         ordered_fieldnames = [%s]
         fieldtypes = [%s]
-        fielddisplays_by_name = {%s}
-        fieldenums_by_name = {%s}
-        fieldunits_by_name = {%s}
         format = '%s'
         native_format = bytearray('%s', 'ascii')
         orders = %s
@@ -372,8 +302,6 @@ class %s(MAVLink_message):
         array_lengths = %s
         crc_extra = %s
         unpacker = struct.Struct('%s')
-        instance_field = %s
-        instance_offset = %d
 
         def __init__(self""" % (classname, wrapper.fill(m.description.strip()),
             m.name.upper(),
@@ -381,18 +309,13 @@ class %s(MAVLink_message):
             fieldname_str,
             ordered_fieldname_str,
             fieldtypes_str,
-            fielddisplays_str,
-            fieldenums_str,
-            fieldunits_str,
             m.fmtstr,
             m.native_fmtstr,
             m.order_map,
             m.len_map,
             m.array_len_map,
             m.crc_extra,
-            m.fmtstr,
-            instance_field,
-            instance_offset))
+            m.fmtstr))
         for i in range(len(m.fields)):
                 fname = m.fieldnames[i]
                 if m.extensions_start is not None and i >= m.extensions_start:
@@ -403,8 +326,6 @@ class %s(MAVLink_message):
         outf.write("):\n")
         outf.write("                MAVLink_message.__init__(self, %s.id, %s.name)\n" % (classname, classname))
         outf.write("                self._fieldnames = %s.fieldnames\n" % (classname))
-        outf.write("                self._instance_field = %s.instance_field\n" % (classname))
-        outf.write("                self._instance_offset = %s.instance_offset\n" % (classname))
         for f in m.fields:
                 outf.write("                self.%s = %s\n" % (f.name, f.name))
         outf.write("""
@@ -509,26 +430,10 @@ class MAVLink_bad_data(MAVLink_message):
                 self.data = data
                 self.reason = reason
                 self._msgbuf = data
-                self._instance_field = None
 
         def __str__(self):
             '''Override the __str__ function from MAVLink_messages because non-printable characters are common in to be the reason for this message to exist.'''
             return '%s {%s, data:%s}' % (self._type, self.reason, [('%x' % ord(i) if isinstance(i, str) else '%x' % i) for i in self.data])
-
-class MAVLink_unknown(MAVLink_message):
-        '''
-        a message that we don't have in the XML used when built
-        '''
-        def __init__(self, msgid, data):
-                MAVLink_message.__init__(self, MAVLINK_MSG_ID_UNKNOWN, 'UNKNOWN_%u' % msgid)
-                self._fieldnames = ['data']
-                self.data = data
-                self._msgbuf = data
-                self._instance_field = None
-
-        def __str__(self):
-            '''Override the __str__ function from MAVLink_messages because non-printable characters are common.'''
-            return '%s {data:%s}' % (self._type, [('%x' % ord(i) if isinstance(i, str) else '%x' % i) for i in self.data])
 
 class MAVLinkSigning(object):
     '''MAVLink signing state class'''
@@ -725,10 +630,7 @@ class MAVLink(object):
         def check_signature(self, msgbuf, srcSystem, srcComponent):
             '''check signature on incoming message'''
             if isinstance(msgbuf, array.array):
-                try:
-                    msgbuf = msgbuf.tostring()
-                except:
-                    msgbuf = msgbuf.tobytes()
+                msgbuf = msgbuf.tostring()
             timestamp_buf = msgbuf[-12:-6]
             link_id = msgbuf[-13]
             (tlow, thigh) = self.mav_sign_unpacker.unpack(timestamp_buf)
@@ -753,13 +655,8 @@ class MAVLink(object):
             h = hashlib.new('sha256')
             h.update(self.signing.secret_key)
             h.update(msgbuf[:-6])
-            if str(type(msgbuf)) == "<class 'bytes'>" or str(type(msgbuf)) == "<class 'bytearray'>":
-                # Python 3
-                sig1 = h.digest()[:6]
-                sig2 = msgbuf[-6:]
-            else:
-                sig1 = str(h.digest())[:6]
-                sig2 = str(msgbuf)[-6:]
+            sig1 = str(h.digest())[:6]
+            sig2 = str(msgbuf)[-6:]
             if sig1 != sig2:
                 # print('sig mismatch')
                 return False
@@ -800,7 +697,7 @@ class MAVLink(object):
                     raise MAVError('invalid MAVLink message length. Got %u expected %u, msgId=%u headerlen=%u' % (len(msgbuf)-(headerlen+2+signature_len), mlen, msgId, headerlen))
 
                 if not mapkey in mavlink_map:
-                    return MAVLink_unknown(msgId, msgbuf)
+                    raise MAVError('unknown MAVLink message ID %s' % str(mapkey))
 
                 # decode the payload
                 type = mavlink_map[mapkey]
@@ -818,7 +715,7 @@ class MAVLink(object):
                 if ${crc_extra}: # using CRC extra
                     crcbuf.append(crc_extra)
                 crc2 = x25crc(crcbuf)
-                if crc != crc2.crc and not MAVLINK_IGNORE_CRC:
+                if crc != crc2.crc:
                     raise MAVError('invalid MAVLink CRC in msgID %u 0x%04x should be 0x%04x' % (msgId, crc, crc2.crc))
 
                 sig_ok = False
@@ -888,7 +785,7 @@ class MAVLink(object):
                 for i in range(0, len(tlist)):
                     if type.fieldtypes[i] == 'char':
                         if sys.version_info.major >= 3:
-                            tlist[i] = to_string(tlist[i])
+                            tlist[i] = tlist[i].decode('utf-8')
                         tlist[i] = str(MAVString(tlist[i]))
                 t = tuple(tlist)
                 # construct the message object
@@ -986,13 +883,10 @@ def generate(basename, xml):
         else:
             m.fmtstr = '>'
         m.native_fmtstr = m.fmtstr
-        m.instance_field = None
         for f in m.ordered_fields:
             m.fmtstr += mavfmt(f)
             m.fielddefaults.append(mavdefault(f))
             m.native_fmtstr += native_mavfmt(f)
-            if f.instance:
-                m.instance_field = f.name
         m.order_map = [0] * len(m.fieldnames)
         m.len_map = [0] * len(m.fieldnames)
         m.array_len_map = [0] * len(m.fieldnames)
