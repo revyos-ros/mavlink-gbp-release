@@ -1,5 +1,6 @@
 from __future__ import absolute_import, print_function
 from setuptools.command.build_py import build_py
+from io import open
 # Work around mbcs bug in distutils.
 # http://bugs.python.org/issue10945
 import codecs
@@ -10,11 +11,11 @@ except LookupError:
     func = lambda name, enc=ascii: {True: enc}.get(name=='mbcs')
     codecs.register(func)
 
-from setuptools import setup, Extension
-import glob, os, shutil, fnmatch, platform, sys
+from setuptools import setup
+import glob, os, shutil, fnmatch, sys
 
-version = '2.3.5'
-
+sys.path.insert(0, os.path.dirname(__file__))
+from __init__ import __version__
 
 def generate_content():
     # generate the file content...
@@ -23,6 +24,7 @@ def generate_content():
     # path to message_definitions directory
     if os.getenv("MDEF",None) is not None:
         mdef_paths = [os.getenv("MDEF")]
+
     else:
         mdef_paths = [os.path.join('..', 'message_definitions'),
                       os.path.join('mavlink', 'message_definitions'),
@@ -60,8 +62,11 @@ def generate_content():
             if not fnmatch.fnmatch(dialect, wildcard):
                 continue
             print("Building %s for protocol 1.0" % xml)
-            if not mavgen.mavgen_python_dialect(dialect, mavparse.PROTOCOL_1_0):
+            if not mavgen.mavgen_python_dialect(dialect, mavparse.PROTOCOL_1_0, with_type_annotations=True):
                 print("Building failed %s for protocol 1.0" % xml)
+                sys.exit(1)
+            if not mavgen.mavgen_python_dialect(dialect, mavparse.PROTOCOL_1_0, with_type_annotations=False):
+                print("Building failed %s (Python2) for protocol 1.0" % xml)
                 sys.exit(1)
 
         for xml in v20_dialects:
@@ -70,22 +75,12 @@ def generate_content():
             if not fnmatch.fnmatch(dialect, wildcard):
                 continue
             print("Building %s for protocol 2.0" % xml)
-            if not mavgen.mavgen_python_dialect(dialect, mavparse.PROTOCOL_2_0):
+            if not mavgen.mavgen_python_dialect(dialect, mavparse.PROTOCOL_2_0, with_type_annotations=True):
                 print("Building failed %s for protocol 2.0" % xml)
                 sys.exit(1)
-
-extensions = []  # Assume we might be unable to build native code
-if platform.system() != 'Windows':
-    extensions = [ Extension('mavnative',
-                   sources=['mavnative/mavnative.c'],
-                   include_dirs=[
-                       'generator/C/include_v1.0',
-                       'generator/C/include_v2.0',
-                       'mavnative'
-                       ]
-                   ) ]
-else:
-    print("Skipping mavnative due to Windows possibly missing a compiler...")
+            if not mavgen.mavgen_python_dialect(dialect, mavparse.PROTOCOL_2_0, with_type_annotations=False):
+                print("Building failed %s (Python2) for protocol 2.0" % xml)
+                sys.exit(1)
 
 
 class custom_build_py(build_py):
@@ -95,24 +90,26 @@ class custom_build_py(build_py):
         # distutils uses old-style classes, so no super()
         build_py.run(self)
 
+with open("README.md", "r", encoding = "utf-8") as fh:
+    long_description = fh.read()
 
 setup (name = 'pymavlink',
-       version = version,
+       version = __version__,
        description = 'Python MAVLink code',
-       long_description = ('A Python library for handling MAVLink protocol streams and log files. This allows for the '
-                           'creation of simple scripts to analyse telemetry logs from autopilots such as ArduPilot which use '
-                           'the MAVLink protocol. See the scripts that come with the package for examples of small, useful '
-                           'scripts that use pymavlink. For more information about the MAVLink protocol see '
-                           'https://mavlink.io/en/'),
+       long_description = long_description,
+       long_description_content_type = "text/markdown",
        url = 'https://github.com/ArduPilot/pymavlink/',
-       classifiers=['Development Status :: 4 - Beta',
+       classifiers=['Development Status :: 5 - Production/Stable',
                     'Environment :: Console',
                     'Intended Audience :: Science/Research',
                     'License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)',
                     'Operating System :: OS Independent',
                     'Programming Language :: Python :: 2.7',
-                    'Programming Language :: Python :: 3.5',
-                    'Topic :: Scientific/Engineering'
+                    'Programming Language :: Python :: 3.6',
+                    'Programming Language :: Python :: 3.7',
+                    'Programming Language :: Python :: 3.8',
+                    'Programming Language :: Python :: 3.9',
+                    'Topic :: Scientific/Engineering',
                     ],
        license='LGPLv3',
        package_dir = { 'pymavlink' : '.' },
@@ -126,16 +123,17 @@ setup (name = 'pymavlink',
                                                      'C/include_v2.0/*.h',
                                                      'C/include_v2.0/*.hpp',
                                                      'CPP11/include_v2.0/*.hpp',
-                                                     'CS/common/*.cs',
+                                                     'CS/*.*',
                                                      'swift/*.swift',],
-                        'pymavlink'              : ['mavnative/*.h',
-                                                    'message_definitions/v*/*.xml']
+                        'pymavlink'              : ['message_definitions/v*/*.xml']
                         },
        packages = ['pymavlink',
                    'pymavlink.generator',
                    'pymavlink.dialects',
                    'pymavlink.dialects.v10',
-                   'pymavlink.dialects.v20'],
+                   'pymavlink.dialects.v10.python2',
+                   'pymavlink.dialects.v20',
+                   'pymavlink.dialects.v20.python2'],
        scripts = [ 'tools/magfit_delta.py', 'tools/mavextract.py',
                    'tools/mavgraph.py', 'tools/mavparmdiff.py',
                    'tools/mavtogpx.py', 'tools/magfit_gps.py',
@@ -153,14 +151,13 @@ setup (name = 'pymavlink',
                    'tools/mavfft.py',
                    'tools/mavfft_isb.py',
                    'tools/mavsummarize.py',
-                   'tools/MPU6KSearch.py'],
+                   'tools/MPU6KSearch.py',
+                   'tools/mavlink_bitmask_decoder.py',
+                   'tools/magfit_WMM.py',
+       ],
        install_requires=[
             'future',
             'lxml',
        ],
-       setup_requires=[
-           'future'  # future is required by mavgen, included by this file
-       ],
        cmdclass={'build_py': custom_build_py},
-       ext_modules = extensions
        )
