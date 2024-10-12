@@ -1,4 +1,4 @@
-release_repo_url: git@github.com:revyos-ros/mavlink-gbp-release
+release_repo_url: git@github.com:revyos-ros/mavlink-gbp-release.git
 tracks:
   eloquent:
     actions:
