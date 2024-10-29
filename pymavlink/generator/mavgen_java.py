@@ -34,20 +34,10 @@ package com.MAVLink.enums;
  * ${description}
  */
 public class ${name} {
-''', en)
-
-        for entry in en.entry:
-            if entry.value > 2147483647:
-                t.write(f, '''
-   public static final long ${name} = ${value}L; /* ${description} |${{param:${description}| }} */
-''', entry)
-            else:
-                t.write(f, '''
-   public static final int ${name} = ${value}; /* ${description} |${{param:${description}| }} */
-''', entry)
-
-        t.write(f, '''
-}''')
+${{entry:   public static final int ${name} = ${value}; /* ${description} |${{param:${description}| }} */
+}}
+}
+            ''', en)
         f.close()
 
 
