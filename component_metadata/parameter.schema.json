@@ -8,11 +8,7 @@
         "version": {
             "description":  "Version number for the format of this file.",
             "type":         "integer",
-            "minimum":      2
-        },
-        "translation": {
-            "type": "object",
-            "description": "This needs to match exactly with the content of parameter.translation.json"
+            "minimum":      1
         },
         "parameters": {
             "type": "array",
