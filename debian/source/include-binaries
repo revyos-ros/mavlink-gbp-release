@@ -1,0 +1,9 @@
+pymavlink/generator/javascript/test/capture.mav2.battery_status.tlog
+pymavlink/generator/javascript_stable/test/capture.mavlink
+pymavlink/tests/snapshottests/resources/autopilot_version.pcapng
+pymavlink/tests/snapshottests/resources/command_long_over_tcp.pcapng
+pymavlink/tests/snapshottests/resources/common.pcapng
+pymavlink/tests/snapshottests/resources/gps_global_origin.pcapng
+pymavlink/tests/snapshottests/resources/gps_raw_int.pcapng
+pymavlink/tests/snapshottests/resources/mission_item_int.pcapng
+pymavlink/tests/test.BIN
