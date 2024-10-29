@@ -181,9 +181,6 @@ def wmm_error(p):
 
     return ret
 
-def printProgress(x):
-    print("offsets:", x[0:3], " scale:", x[3])
-
 def fit_WWW():
     from scipy import optimize
 
@@ -222,7 +219,7 @@ def fit_WWW():
             for i in range(3):
                 bounds.append((-args.max_cmot,args.max_cmot))
 
-    (p,err,iterations,imode,smode) = optimize.fmin_slsqp(wmm_error, p, bounds=bounds, full_output=True, iter=args.iter, callback=printProgress)
+    (p,err,iterations,imode,smode) = optimize.fmin_slsqp(wmm_error, p, bounds=bounds, full_output=True, iter=args.iter)
     if imode != 0:
         print("Fit failed: %s" % smode)
         sys.exit(1)
