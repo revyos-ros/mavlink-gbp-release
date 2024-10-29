@@ -45,7 +45,7 @@ MAXIMUM_INCLUDE_FILE_NESTING = 5
 
 # List the supported languages. This is done globally because it's used by the GUI wrapper too
 # Right now, 'JavaScript' ~= 'JavaScript_Stable', in the future it may be made equivalent to 'JavaScript_NextGen'
-supportedLanguages = ["Ada", "C", "CS", "JavaScript", "JavaScript_Stable","JavaScript_NextGen", "TypeScript", "Python2", "Python3", "Python", "Lua", "WLua", "ObjC", "Swift", "Java", "C++11"]
+supportedLanguages = ["C", "CS", "JavaScript", "JavaScript_Stable","JavaScript_NextGen", "TypeScript", "Python2", "Python3", "Python", "Lua", "WLua", "ObjC", "Swift", "Java", "C++11"]
 
 
 def mavgen(opts, args):
@@ -117,10 +117,7 @@ def mavgen(opts, args):
                 break
 
         if mavparse.check_duplicates(xml):
-            return False
-        if opts.validate and mavparse.check_missing_enum(xml):
-            return False
-        return True
+            sys.exit(1)
 
     def update_includes():
         """Update dialects with crcs etc of included files.  Included files
@@ -240,8 +237,7 @@ def mavgen(opts, args):
         xml.append(mavparse.MAVXML(fname, opts.wire_protocol))
 
     # expand includes
-    if not expand_includes():
-        return False
+    expand_includes()
     update_includes()
 
     print("Found %u MAVLink message types in %u XML files" % (
@@ -295,12 +291,6 @@ def mavgen(opts, args):
     elif opts.language == 'c++11':
         from . import mavgen_cpp11
         mavgen_cpp11.generate(opts.output, xml)
-    elif opts.language == 'ada':
-        if opts.wire_protocol != mavparse.PROTOCOL_1_0:
-            raise DeprecationWarning("Error! Mavgen_Ada only supports protocol version 1.0")
-        else:
-            from . import mavgen_ada
-            mavgen_ada.generate(opts.output, xml)
     else:
         print("Unsupported language %s" % opts.language)
 
@@ -356,8 +346,6 @@ def mavgen_python_dialect(dialect, wire_protocol, with_type_annotations):
     try:
         xml = os.path.relpath(xml)
         if not mavgen(opts, [xml]):
-            sys.stdout.seek(0)
-            stdout_saved.write(sys.stdout.getvalue())
             sys.stdout = stdout_saved
             return False
     except Exception:
