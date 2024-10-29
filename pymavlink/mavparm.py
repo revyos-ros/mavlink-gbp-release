@@ -48,16 +48,13 @@ class MAVParmDict(dict):
             else:
                 print("can't send %s of type %u" % (name, parm_type))
                 return False
-            numeric_value, = struct.unpack(">f", vstr)
+            vfloat, = struct.unpack(">f", vstr)
         else:
-            if isinstance(value, str) and value.lower().startswith('0x'):
-                numeric_value = int(value[2:], 16)
-            else:
-                numeric_value = float(value)
+            vfloat = float(value)
 
         while retries > 0 and not got_ack:
             retries -= 1
-            mav.param_set_send(name.upper(), numeric_value, parm_type=parm_type)
+            mav.param_set_send(name.upper(), vfloat, parm_type=parm_type)
             tstart = time.time()
             while time.time() - tstart < 1:
                 ack = mav.recv_match(type='PARAM_VALUE', blocking=False)
@@ -66,10 +63,10 @@ class MAVParmDict(dict):
                     continue
                 if str(name).upper() == str(ack.param_id).upper():
                     got_ack = True
-                    self.__setitem__(name, numeric_value)
+                    self.__setitem__(name, float(value))
                     break
         if not got_ack:
-            print("timeout setting %s to %f" % (name, numeric_value))
+            print("timeout setting %s to %f" % (name, vfloat))
             return False
         return True
 
@@ -116,29 +113,23 @@ class MAVParmDict(dict):
                 continue
             if not fnmatch.fnmatch(a[0].upper(), wildcard.upper()):
                 continue
-            value = a[1].strip()
-            if isinstance(value, str) and value.lower().startswith('0x'):
-                numeric_value = int(value[2:], 16)
-            else:
-                numeric_value = float(value)
-
             if mav is not None:
                 if check:
                     if a[0] not in list(self.keys()):
                         print("Unknown parameter %s" % a[0])
                         continue
                     old_value = self.__getitem__(a[0])
-                    if math.fabs(old_value - numeric_value) <= self.mindelta:
+                    if math.fabs(old_value - float(a[1])) <= self.mindelta:
                         count += 1
                         continue
-                    if self.mavset(mav, a[0], value):
-                        print("changed %s from %f to %f" % (a[0], old_value, numeric_value))
+                    if self.mavset(mav, a[0], a[1]):
+                        print("changed %s from %f to %f" % (a[0], old_value, float(a[1])))
                 else:
-                    print("set %s to %f" % (a[0], numeric_value))
-                    self.mavset(mav, a[0], value)
+                    print("set %s to %f" % (a[0], float(a[1])))
+                    self.mavset(mav, a[0], a[1])
                 changed += 1
             else:
-                self.__setitem__(a[0], numeric_value)
+                self.__setitem__(a[0], float(a[1]))
             count += 1
         f.close()
         if mav is not None:

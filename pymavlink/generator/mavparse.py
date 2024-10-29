@@ -33,7 +33,7 @@ class MAVParseError(Exception):
         return self.message
 
 class MAVField(object):
-    def __init__(self, name, type, print_format, xml, description='', enum='', display='', units='', multiplier='', instance=False):
+    def __init__(self, name, type, print_format, xml, description='', enum='', display='', units='', instance=False):
         self.name = name
         self.name_upper = name.upper()
         self.description = description
@@ -41,7 +41,6 @@ class MAVField(object):
         self.enum = enum
         self.display = display
         self.units = units
-        self.multiplier = multiplier
         self.omit_arg = False
         self.const_value = None
         self.print_format = print_format
@@ -142,7 +141,7 @@ class MAVType(object):
         return len(self.fields[:self.extensions_start])
 
 class MAVEnumParam(object):
-    def __init__(self, index, description='', label='', units='', enum='', increment='', minValue='', maxValue='', reserved=False, default='', multiplier=''):
+    def __init__(self, index, description='', label='', units='', enum='', increment='', minValue='', maxValue='', reserved=False, default=''):
         self.index = index
         self.description = description
         self.label = label
@@ -153,7 +152,6 @@ class MAVEnumParam(object):
         self.maxValue = maxValue
         self.reserved = reserved
         self.default = default
-        self.multiplier = multiplier
         if self.reserved and not self.default:
             self.default = '0'
         self.set_description(description)
@@ -258,9 +256,8 @@ class MAVXML(object):
                 units = attrs.get('units', '')
                 if units:
                     units = '[' + units + ']'
-                multiplier = attrs.get('multiplier', '')
                 instance = attrs.get('instance', False)
-                new_field = MAVField(attrs['name'], attrs['type'], print_format, self, enum=enum, display=display, units=units, multiplier=multiplier, instance=instance)
+                new_field = MAVField(attrs['name'], attrs['type'], print_format, self, enum=enum, display=display, units=units, instance=instance)
                 if self.message[-1].extensions_start is None or self.allow_extensions:
                     self.message[-1].fields.append(new_field)
             elif in_element == "mavlink.enums.enum":
@@ -299,7 +296,7 @@ class MAVXML(object):
                                                         enum=attrs.get('enum', ''), increment=attrs.get('increment', ''), 
                                                         minValue=attrs.get('minValue', ''), 
                                                         maxValue=attrs.get('maxValue', ''), default=attrs.get('default', '0'), 
-                                                        reserved=attrs.get('reserved', False), multiplier=attrs.get('multiplier','') ))
+                                                        reserved=attrs.get('reserved', False) ))
 
         def is_target_system_field(m, f):
             if f.name == 'target_system':
