@@ -1,0 +1,29 @@
+From 5527bea892271676d3541d03d6706f55635a114c Mon Sep 17 00:00:00 2001
+From: Zheng Junjie <zhengjunjie@iscas.ac.cn>
+Date: Tue, 29 Oct 2024 16:39:38 +0800
+Subject: [PATCH] u
+
+---
+ debian/source/include-binaries | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+ create mode 100644 debian/source/include-binaries
+
+diff --git a/debian/source/include-binaries b/debian/source/include-binaries
+new file mode 100644
+index 00000000..8b6db084
+--- /dev/null
++++ b/debian/source/include-binaries
+@@ -0,0 +1,9 @@
++pymavlink/generator/javascript/test/capture.mav2.battery_status.tlog
++pymavlink/generator/javascript_stable/test/capture.mavlink
++pymavlink/tests/snapshottests/resources/autopilot_version.pcapng
++pymavlink/tests/snapshottests/resources/command_long_over_tcp.pcapng
++pymavlink/tests/snapshottests/resources/common.pcapng
++pymavlink/tests/snapshottests/resources/gps_global_origin.pcapng
++pymavlink/tests/snapshottests/resources/gps_raw_int.pcapng
++pymavlink/tests/snapshottests/resources/mission_item_int.pcapng
++pymavlink/tests/test.BIN
+\ No newline at end of file
+-- 
+2.46.0
+
