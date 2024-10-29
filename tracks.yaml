@@ -97,11 +97,11 @@ tracks:
     - git-bloom-generate -y rosrpm --prefix release/:{ros_distro} :{ros_distro} -i
       :{release_inc} --os-name rhel
     devel_branch: master
-    last_release: fe14d798662f687407b03e383d2a9841a8590392
+    last_release: 0077129bc6169fa072bd86ed968bd486b0117d46
     last_version: 2024.10.10
     name: upstream
     patches: patch
-    release_inc: '3'
+    release_inc: '4'
     release_repo_url: git@github.com:mavlink/mavlink-gbp-release.git
     release_tag: :{ask}
     ros_distro: humble
