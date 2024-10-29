@@ -356,10 +356,6 @@ class mavfile(object):
                         mavlink.MAV_TYPE_ADSB,
                         mavlink.MAV_TYPE_ONBOARD_CONTROLLER):
             return False
-        if msg.autopilot in frozenset([
-                mavlink.MAV_AUTOPILOT_INVALID
-                ]):
-            return False
         return True
 
     def post_message(self, msg):
@@ -795,20 +791,16 @@ class mavfile(object):
             MAV_ACTION_CALIBRATE_PRESSURE = 20
             self.mav.action_send(self.target_system, self.target_component, MAV_ACTION_CALIBRATE_PRESSURE)
 
-    def reboot_autopilot(self, hold_in_bootloader=False, force=False):
+    def reboot_autopilot(self, hold_in_bootloader=False):
         '''reboot the autopilot'''
         if self.mavlink10():
             if hold_in_bootloader:
                 param1 = 3
             else:
                 param1 = 1
-            if force:
-                param6 = 20190226
-            else:
-                param6 = 0
             self.mav.command_long_send(self.target_system, self.target_component,
                                        mavlink.MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN, 0,
-                                       param1, 0, 0, 0, 0, param6, 0)
+                                       param1, 0, 0, 0, 0, 0, 0)
 
     def wait_gps_fix(self):
         self.recv_match(type='VFR_HUD', blocking=True)
@@ -928,7 +920,7 @@ class mavfile(object):
         self.mav.signing.timestamp = 0
 
 def set_close_on_exec(fd):
-    '''set the close on exec flag on a file descriptor. Ignore exceptions'''
+    '''set the clone on exec flag on a file descriptor. Ignore exceptions'''
     try:
         import fcntl
         flags = fcntl.fcntl(fd, fcntl.F_GETFD)
@@ -1329,8 +1321,6 @@ class mavtcpin(mavfile):
         self.port = None
 
     def close(self):
-        if self.port is not None:
-            self.port.close()
         self.listen.close()
 
     def recv(self,n=None):
@@ -2106,9 +2096,6 @@ AP_MAV_TYPE_MODE_MAP_DEFAULT = {
     mavlink.MAV_TYPE_COAXIAL:     mode_mapping_acm,
     # plane
     mavlink.MAV_TYPE_FIXED_WING: mode_mapping_apm,
-    mavlink.MAV_TYPE_VTOL_DUOROTOR: mode_mapping_apm,
-    mavlink.MAV_TYPE_VTOL_QUADROTOR: mode_mapping_apm,
-    mavlink.MAV_TYPE_VTOL_TILTROTOR: mode_mapping_apm,
     # rover
     mavlink.MAV_TYPE_GROUND_ROVER: mode_mapping_rover,
     # boat
@@ -2276,11 +2263,7 @@ def mode_mapping_bynumber(mav_type):
 def mode_string_v10(msg):
     '''mode string for 1.0 protocol, from heartbeat'''
     if msg.autopilot == mavlink.MAV_AUTOPILOT_PX4:
-        if msg.get_type() == "HIGH_LATENCY2":
-            return "Mode(%u)" % msg.custom_mode
-
         return interpret_px4_mode(msg.base_mode, msg.custom_mode)
-
     if msg.get_type() != 'HIGH_LATENCY2' and not msg.base_mode & mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED:
         return "Mode(0x%08x)" % msg.base_mode
 
@@ -2310,7 +2293,7 @@ class MavlinkSerialPort(object):
                 self.baudrate = 0
                 self.timeout = timeout
                 self._debug = debug
-                self.buf = bytearray()
+                self.buf = ''
                 self.port = devnum
                 self.debug("Connecting with MAVLink to %s ..." % portname)
                 self.mav = mavutil.mavlink_connection(portname, autoreconnect=True, baud=baudrate)
@@ -2328,11 +2311,12 @@ class MavlinkSerialPort(object):
         def write(self, b):
                 '''write some bytes'''
                 from . import mavutil
+                self.debug("sending '%s' (0x%02x) of len %u\n" % (b, ord(b[0]), len(b)), 2)
                 while len(b) > 0:
                         n = len(b)
                         if n > 70:
                                 n = 70
-                        buf = bytearray(b[:])
+                        buf = [ord(x) for x in b[:n]]
                         buf.extend([0]*(70-len(buf)))
                         self.mav.mav.serial_control_send(self.port,
                                                          mavutil.mavlink.SERIAL_CONTROL_FLAG_EXCLUSIVE |
@@ -2366,7 +2350,7 @@ class MavlinkSerialPort(object):
                         if self._debug > 2:
                                 print(m)
                         data = m.data[:m.count]
-                        self.buf.extend(data)
+                        self.buf += ''.join(str(chr(x)) for x in data)
 
         def read(self, n):
                 '''read some bytes'''
@@ -2377,17 +2361,20 @@ class MavlinkSerialPort(object):
                                 n = len(self.buf)
                         ret = self.buf[:n]
                         self.buf = self.buf[n:]
+                        if self._debug >= 2:
+                            for b in ret:
+                                self.debug("read 0x%x" % ord(b), 2)
                         return ret
-                return bytearray()
+                return ''
 
         def flushInput(self):
                 '''flush any pending input'''
-                self.buf = bytearray()
+                self.buf = ''
                 saved_timeout = self.timeout
                 self.timeout = 0.5
                 self._recv()
                 self.timeout = saved_timeout
-                self.buf = bytearray()
+                self.buf = ''
                 self.debug("flushInput")
 
         def setBaudrate(self, baudrate):

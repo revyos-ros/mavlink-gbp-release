@@ -214,8 +214,6 @@ def generate_message_enums(f, xml):
             if hasattr(fe, "deprecated") and fe.deprecated is True:
                 fe.name = '''[Obsolete]
         %s''' % fe.name
-            for p in fe.param:
-                p.description = cleanText(p.description)
             
     t.write(f, '''
     ${{enum:

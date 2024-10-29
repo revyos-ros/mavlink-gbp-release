@@ -248,6 +248,8 @@ MAVLINK_HELPER uint8_t mavlink_frame_char_buffer(mavlink_message_t* rxmsg,
 #endif
 #endif
 
+	int bufferIndex = 0;
+
 	status->msg_received = MAVLINK_FRAMING_INCOMPLETE;
 
 	switch (status->parse_state)
@@ -362,6 +364,7 @@ MAVLINK_HELPER uint8_t mavlink_frame_char_buffer(mavlink_message_t* rxmsg,
 		break;
 	}
 
+	bufferIndex++;
 	// If a message has been successfully decoded, check index
 	if (status->msg_received == MAVLINK_FRAMING_OK)
 	{
