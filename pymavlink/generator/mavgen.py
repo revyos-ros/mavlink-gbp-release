@@ -23,10 +23,8 @@ General process:
 '''
 
 from __future__ import print_function
-import sys
-if sys.version_info <= (3,10):
-    from future import standard_library
-    standard_library.install_aliases()
+from future import standard_library
+standard_library.install_aliases()
 from builtins import object
 import os
 import re
@@ -323,7 +321,7 @@ class Opts(object):
 def mavgen_python_dialect(dialect, wire_protocol, with_type_annotations):
     '''generate the python code on the fly for a MAVLink dialect'''
     dialects = os.path.join(os.path.dirname(os.path.realpath(__file__)), '..', 'dialects')
-    mdef = os.getenv("MDEF", default=os.path.join(os.path.dirname(os.path.realpath(__file__)), '..', '..', 'message_definitions'))
+    mdef = os.path.join(os.path.dirname(os.path.realpath(__file__)), '..', '..', 'message_definitions')
     legacy_path = "python2" if not with_type_annotations else ""
     if wire_protocol == mavparse.PROTOCOL_0_9:
         py = os.path.join(dialects, 'v09', legacy_path, dialect + '.py')
