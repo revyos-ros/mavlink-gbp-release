@@ -1,3 +1,26 @@
+## mavlink (jazzy) - 2025.6.6-1
+
+The packages in the `mavlink` repository were released into the `jazzy` distro by running `/root/venv/bin/bloom-release -r jazzy mavlink --override-release-repository-push-url git@github.com:revyos-ros/mavlink-gbp-release.git` on `Mon, 23 Jun 2025 06:48:49 -0000`
+
+The `mavlink` package was released.
+
+Version of package(s) in repository `mavlink`:
+
+- upstream repository: https://github.com/mavlink/mavlink.git
+- release repository: https://github.com/revyos-ros/mavlink-gbp-release.git
+- rosdistro version: `2025.6.6-1`
+- old version: `2024.10.10-1`
+- new version: `2025.6.6-1`
+
+Versions of tools used:
+
+- bloom version: `0.12.0`
+- catkin_pkg version: `1.0.0`
+- rosdep version: `0.25.1`
+- rosdistro version: `1.0.1`
+- vcstools version: `0.1.42`
+
+
 ## mavlink (humble) - 2025.6.6-1
 
 The packages in the `mavlink` repository were released into the `humble` distro by running `/home/z572/gits/revyos-ros/venv/bin/bloom-release -r humble mavlink --override-release-repository-push-url git@github.com:revyos-ros/mavlink-gbp-release.git` on `Tue, 17 Jun 2025 04:46:39 -0000`
