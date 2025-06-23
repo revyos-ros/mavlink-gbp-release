@@ -194,8 +194,8 @@ tracks:
     - git-bloom-generate -y rosrpm --prefix release/:{ros_distro} :{ros_distro} -i
       :{release_inc} --os-name rhel
     devel_branch: master
-    last_release: b4add5292992cc43bd471b431b425338787982be
-    last_version: 2024.10.10
+    last_release: c27f4593be4c20eabd2df7918b6c68b1808d33f7
+    last_version: 2025.6.6
     name: upstream
     patches: patch
     release_inc: '1'
